@@ -13,6 +13,9 @@ type
 var
   lox_output: TStringMethod;
 
+const
+  NL = #13; // new line
+
 procedure print(S: string);
 procedure printf(const Fmt: string; vars: array of const);
 
@@ -34,13 +37,13 @@ var
   i: Integer;
 begin
   line := line + S;
-  i := pos(#13, line);
+  i := pos(NL, line);
   while i > 0 do
   begin
     s := copy(line, 1, i-1);
     internal_print(S);
     delete(line, 1, i);
-    i := pos(#13, line);
+    i := pos(NL, line);
   end;
   while length(line) > MAX_LINE do
   begin

@@ -14,7 +14,7 @@ implementation
 
 function simpleIntsruction(const name: string; const offset: integer): integer;
 begin
-  print(name+#13);
+  print(name+NL);
   Result := offset + 1;
 end;
 
@@ -25,7 +25,7 @@ begin
   constant := C.code[offset+1];
   printf('%-16s %4d ', [name, constant]);
   printValue(C.constants.values[constant]);
-  print(#13);
+  print(NL);
   Result := offset + 2;
 end;
 
@@ -33,11 +33,13 @@ procedure disassembleChunk(const C: TChunk; const name: string);
 var
   offset: Integer;
 begin
-  printf('=== %s ==='#13,[name]);
+  printf('=== %s ==='+NL,[name]);
 
   offset := 0;
   while (offset < C.count) do
     offset := disassembleInstruction(C, offset);
+
+  print('=== END ==='+NL);
 end;
 
 function disassembleInstruction(const C: TChunk; const offset: integer): integer;
@@ -53,14 +55,26 @@ begin
 
   instruction := C.code[offset];
   case (instruction) of
+    OP_HALT:
+      Result := simpleIntsruction('OP_HALT', offset);
     OP_RETURN:
       Result := simpleIntsruction('OP_RETURN', offset);
     OP_CONSTANT:
       Result := constantIntsruction('OP_CONSTANT', C, offset);
+    OP_NEGATE:
+      Result := simpleIntsruction('OP_NEGATE', offset);
+    OP_ADD:
+      Result := simpleIntsruction('OP_ADD', offset);
+    OP_SUBTRACT:
+      Result := simpleIntsruction('OP_SUBTRACT', offset);
+    OP_MULTIPLY:
+      Result := simpleIntsruction('OP_MULTIPLY', offset);
+    OP_DIVIDE:
+      Result := simpleIntsruction('OP_DIVIDE', offset);
 
   else
     begin
-      printf('Unknown opcode %d'#13, [instruction]);
+      printf('Unknown opcode %d'+NL, [instruction]);
       Result := offset + 1;
     end;
   end;

@@ -65,6 +65,10 @@
         <Filename Value="plox\value.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
+      <Unit>
+        <Filename Value="plox\vm.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
@@ -89,6 +93,12 @@
         </Win32>
       </Options>
     </Linking>
+    <Other>
+      <CustomOptions Value="-dDEBUG_TRACE_EXECUTION"/>
+      <OtherDefines Count="1">
+        <Define0 Value="DEBUG_TRACE_EXECUTION"/>
+      </OtherDefines>
+    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions>
