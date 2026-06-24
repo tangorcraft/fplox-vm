@@ -1,0 +1,76 @@
+object FMain: TFMain
+  Left = 256
+  Height = 673
+  Top = 145
+  Width = 1267
+  Caption = 'Lox Interpreter'
+  ClientHeight = 673
+  ClientWidth = 1267
+  LCLVersion = '4.6.0.0'
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  object MemoLox: TMemo
+    Left = 0
+    Height = 673
+    Top = 0
+    Width = 352
+    Align = alLeft
+    Font.Name = 'Courier New'
+    Lines.Strings = (
+      '// Lox source'
+    )
+    ParentFont = False
+    ScrollBars = ssVertical
+    TabOrder = 0
+  end
+  object PanelMiddle: TPanel
+    Left = 357
+    Height = 673
+    Top = 0
+    Width = 147
+    Align = alLeft
+    ClientHeight = 673
+    ClientWidth = 147
+    TabOrder = 1
+    object BRunLox: TButton
+      Left = 16
+      Height = 25
+      Top = 8
+      Width = 115
+      Caption = 'Run'
+      TabOrder = 0
+      OnClick = BRunLoxClick
+    end
+    object BClearConsole: TButton
+      Left = 16
+      Height = 25
+      Top = 48
+      Width = 115
+      Caption = 'Clear Console'
+      TabOrder = 1
+      OnClick = BClearConsoleClick
+    end
+  end
+  object MemoConsole: TMemo
+    Left = 504
+    Height = 673
+    Top = 0
+    Width = 763
+    Align = alClient
+    Font.Name = 'Courier New'
+    Lines.Strings = (
+      'Output Console'
+    )
+    ParentFont = False
+    ReadOnly = True
+    ScrollBars = ssVertical
+    TabOrder = 2
+  end
+  object Splitter1: TSplitter
+    Left = 352
+    Height = 673
+    Top = 0
+    Width = 5
+    AutoSnap = False
+  end
+end
