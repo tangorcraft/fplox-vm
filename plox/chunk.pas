@@ -16,6 +16,7 @@ const
   OP_SUBTRACT = 5;
   OP_MULTIPLY = 6;
   OP_DIVIDE = 7;
+  OP_CONSTANT_LONG = 8;
 
 type
 
@@ -30,8 +31,11 @@ type
     constructor Create();
     destructor Destroy; override;
 
-    procedure write(const B: Byte; const line: Integer);
     function addConstant(const V: TValue): Integer;
+
+    procedure write(const B: Byte; const line: Integer);
+    procedure write24(const I: Integer; const line: Integer);
+    procedure writeConstant(const V: TValue; const line: Integer);
   end;
 
 implementation
@@ -53,6 +57,12 @@ begin
   inherited Destroy;
 end;
 
+function TChunk.addConstant(const V: TValue): Integer;
+begin
+  constants.write(V);
+  Result := constants.count - 1;
+end;
+
 procedure TChunk.write(const B: Byte; const line: Integer);
 begin
   if capacity < (count + 1) then
@@ -65,10 +75,25 @@ begin
   inc(count);
 end;
 
-function TChunk.addConstant(const V: TValue): Integer;
+procedure TChunk.write24(const I: Integer; const line: Integer);
 begin
-  constants.write(V);
-  Result := constants.count - 1;
+  write((I shr 16) and $FF, line);
+  write((I shr 8) and $FF, line);
+  write(I and $FF, line);
+end;
+
+procedure TChunk.writeConstant(const V: TValue; const line: Integer);
+begin
+  if constants.count < 255 then
+  begin
+    write(OP_CONSTANT, line);
+    write(addConstant(V), line);
+  end
+  else
+  begin
+    write(OP_CONSTANT_LONG, line);
+    write24(addConstant(V), line);
+  end;
 end;
 
 end.

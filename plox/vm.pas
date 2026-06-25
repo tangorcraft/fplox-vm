@@ -5,7 +5,7 @@ unit vm;
 interface
 
 uses
-  Classes, SysUtils, debug, chunk, value, common;
+  Classes, SysUtils, compiler, debug, chunk, value, common;
 
 const
   MAX_STACK = 1024;
@@ -34,7 +34,7 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    function interpret(const C: TChunk): InterpretResult;
+    function interpret(const source: string): InterpretResult;
     function run(): InterpretResult;
   end;
 
@@ -69,11 +69,10 @@ begin
   inherited Destroy;
 end;
 
-function TLoxVM.interpret(const C: TChunk): InterpretResult;
+function TLoxVM.interpret(const source: string): InterpretResult;
 begin
-  FChunk := C;
-  ip := C.code;
-  Result := run();
+  compile(source);
+  Result := INTERPRET_HALT;//run();
 end;
 
 function TLoxVM.run: InterpretResult;
@@ -90,6 +89,14 @@ var
   function READ_CONSTANT: TValue;
   begin
     Result := FChunk.constants.values[READ_BYTE];
+  end;
+
+  function READ_CONSTANT_LONG: TValue;
+  var
+    index: integer;
+  begin
+    index := (READ_BYTE shl 16) or (READ_BYTE shl 8) or READ_BYTE;
+    Result := FChunk.constants.values[index];
   end;
 
   procedure BINARY_OP();

@@ -40,29 +40,19 @@ begin
 end;
 
 function TLoxEngine.Execute(const source: string): Integer;
-var
-  constant: Integer;
 begin
-  constant := FChunk.addConstant(1.2);
-  FChunk.write(OP_CONSTANT, 123);
-  FChunk.write(constant, 123);
 
-  constant := FChunk.addConstant(3.4);
-  FChunk.write(OP_CONSTANT, 123);
-  FChunk.write(constant, 123);
+  case vm.interpret(source) of
+    INTERPRET_OK:
+      Exit(0);
+    INTERPRET_HALT:
+      print('HALT: Code execution terminated.'+NL);
+    INTERPRET_COMPILE_ERROR:
+      Exit(65);
+    INTERPRET_RUNTIME_ERROR:
+      Exit(70);
+  end;
 
-  FChunk.write(OP_ADD, 123);
-
-  constant := FChunk.addConstant(5.6);
-  FChunk.write(OP_CONSTANT, 123);
-  FChunk.write(constant, 123);
-
-  FChunk.write(OP_DIVIDE, 123);
-  FChunk.write(OP_NEGATE, 123);
-  FChunk.write(OP_RETURN, 123);
-
-  disassembleChunk(FChunk, 'test chunk');
-  vm.interpret(FChunk);
   Result := 0;
 end;
 

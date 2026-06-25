@@ -18,15 +18,29 @@ begin
   Result := offset + 1;
 end;
 
+procedure print_constant(const name: string; const constant: integer; const V: TValue);
+begin
+  printf('%-16s %4d ', [name, constant]);
+  printValue(V);
+  print(NL);
+end;
+
 function constantIntsruction(const name: string; const C: TChunk; const offset: integer): integer;
 var
   constant: Byte;
 begin
   constant := C.code[offset+1];
-  printf('%-16s %4d ', [name, constant]);
-  printValue(C.constants.values[constant]);
-  print(NL);
+  print_constant(name, constant, C.constants.values[constant]);
   Result := offset + 2;
+end;
+
+function constantLongIntsruction(const name: string; const C: TChunk; const offset: integer): integer;
+var
+  constant: integer;
+begin
+  constant := (C.code[offset+1] shl 16) + (C.code[offset+2] shl 8) + C.code[offset+3];
+  print_constant(name, constant, C.constants.values[constant]);
+  Result := offset + 4;
 end;
 
 procedure disassembleChunk(const C: TChunk; const name: string);
@@ -71,6 +85,8 @@ begin
       Result := simpleIntsruction('OP_MULTIPLY', offset);
     OP_DIVIDE:
       Result := simpleIntsruction('OP_DIVIDE', offset);
+    OP_CONSTANT_LONG:
+      Result := constantLongIntsruction('OP_CONSTANT_LONG', C, offset);
 
   else
     begin

@@ -51,9 +51,9 @@ var
   ret: integer;
 begin
   lox := TLoxEngine.Create();
-  MemoConsole.Lines.Add('Lox Interpreter execution started');
+  MemoConsole.Lines.Add('Lox Interpreter started');
   try
-    ret := lox.Execute([]);
+    ret := lox.Execute(MemoLox.Text);
   finally
     lox.Free;
   end;

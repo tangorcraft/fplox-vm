@@ -19,6 +19,8 @@ const
 procedure print(S: string);
 procedure printf(const Fmt: string; vars: array of const);
 
+function memcmp(const p1, p2: Pointer; const count: SizeInt): boolean;
+
 implementation
 
 var
@@ -55,6 +57,11 @@ end;
 procedure printf(const Fmt: string; vars: array of const);
 begin
   print(Format(Fmt, vars));
+end;
+
+function memcmp(const p1, p2: Pointer; const count: SizeInt): boolean;
+begin
+  Result := CompareByte(p1^, p2^, count) = 0;
 end;
 
 end.
