@@ -71,8 +71,17 @@ end;
 
 function TLoxVM.interpret(const source: string): InterpretResult;
 begin
-  compile(source);
-  Result := INTERPRET_HALT;//run();
+  FChunk := TChunk.Create();
+  try
+    if not compile(source, FChunk) then
+      Exit(INTERPRET_COMPILE_ERROR);
+
+    ip := FChunk.code;
+    Result := run();
+  finally
+    FChunk.Free;
+    FChunk := nil;
+  end;
 end;
 
 function TLoxVM.run: InterpretResult;
