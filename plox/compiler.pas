@@ -1,11 +1,14 @@
 unit compiler;
 
 {$mode ObjFPC}{$H+}
+{$define DEBUG_PRINT_CODE}
 
 interface
 
 uses
-  Classes, SysUtils, scanner, debug, chunk, value, memory, common;
+  Classes, SysUtils, scanner,
+  {$ifdef DEBUG_PRINT_CODE}debug,{$endif}
+  chunk, value, memory, common;
 
 function compile(const source: string; var C: TChunk): Boolean;
 
@@ -39,6 +42,7 @@ type
     infix: TParseProc;
     precedence: TPrecedence;
   end;
+  PParseRule = ^TParseRule;
 
   { TCompiler }
 
@@ -62,11 +66,11 @@ type
     procedure emitReturn();
     procedure emitConstant(const V: TValue);
     procedure endCompiler();
-    procedure number();
     procedure parsePrecedense(const P: TPrecedence);
     procedure expression();
-    procedure binary();
+    procedure number();
     procedure unary();
+    procedure binary();
     procedure grouping();
     function compile_(const source: string; var C: TChunk): Boolean;
   end;
@@ -221,17 +225,31 @@ begin
   emitReturn();
 end;
 
-procedure TCompiler.number();
-var
-  value: double;
-begin
-  value := strtod(copy(parser.previous.start, 1, parser.previous.length));
-  emitConstant(value);
-end;
-
 procedure TCompiler.parsePrecedense(const P: TPrecedence);
+var
+  ruleProc: TParseProc;
 begin
+  advance();
+  ruleProc := parseRules[parser.previous.type_].prefix;
+  if not Assigned(ruleProc) then
+  begin
+    error('Expect expression');
+    Exit;
+  end;
 
+  ruleProc();
+
+  while (P <= parseRules[parser.current.type_].precedence) do
+  begin
+    advance();
+    ruleProc := parseRules[parser.previous.type_].infix;
+    if not Assigned(ruleProc) then
+    begin
+      error('Operation not allowed');
+      Exit;
+    end;
+    ruleProc();
+  end;
 end;
 
 procedure TCompiler.expression();
@@ -239,18 +257,12 @@ begin
   parsePrecedense(PREC_ASSIGNMENT);
 end;
 
-procedure TCompiler.binary();
+procedure TCompiler.number();
 var
-  oper_type: TokenType;
+  value: double;
 begin
-  oper_type := parser.previous.type_;
-
-  case oper_type of
-    TOKEN_PLUS:  emitCode(OP_ADD);
-    TOKEN_MINUS: emitCode(OP_SUBTRACT);
-    TOKEN_STAR:  emitCode(OP_MULTIPLY);
-    TOKEN_SLASH: emitCode(OP_DIVIDE);
-  end;
+  value := strtod(copy(parser.previous.start, 1, parser.previous.length));
+  emitConstant(value);
 end;
 
 procedure TCompiler.unary();
@@ -263,6 +275,21 @@ begin
 
   case oper_type of
     TOKEN_MINUS: emitCode(OP_NEGATE);
+  end;
+end;
+
+procedure TCompiler.binary();
+var
+  oper_type: TokenType;
+begin
+  oper_type := parser.previous.type_;
+  parsePrecedense(Succ(parseRules[oper_type].precedence));
+
+  case oper_type of
+    TOKEN_PLUS:  emitCode(OP_ADD);
+    TOKEN_MINUS: emitCode(OP_SUBTRACT);
+    TOKEN_STAR:  emitCode(OP_MULTIPLY);
+    TOKEN_SLASH: emitCode(OP_DIVIDE);
   end;
 end;
 
@@ -288,6 +315,10 @@ begin
   end;
   endCompiler();
   Result := not parser.hadError;
+  {$ifdef DEBUG_PRINT_CODE}
+  if Result then
+    disassembleChunk(currentChunk(), 'code');
+  {$endif}
 end;
 
 end.
