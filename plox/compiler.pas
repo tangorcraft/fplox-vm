@@ -33,209 +33,247 @@ type
     PREC_PRIMARY
   );
 
+  TParseProc = procedure of object;
   TParseRule = record
-    prefix: TProcedure;
-    infix: TProcedure;
+    prefix: TParseProc;
+    infix: TParseProc;
     precedence: TPrecedence;
   end;
 
+  { TCompiler }
+
+  TCompiler = class
+    scanner: TLoxScanner;
+    parser: TParser;
+    compilingChunk: TChunk;
+    parseRules: array[TokenType] of TParseRule;
+
+    constructor Create;
+
+    function currentChunk: TChunk;
+    procedure errorAt(const T: TToken; const msg: PChar);
+    procedure error(const msg: PChar);
+    procedure errorAtCurrent(const msg: PChar);
+    procedure advance();
+    procedure consume(const type_: TokenType; const msg: PChar);
+    procedure emitByte(const B: Byte);
+    procedure emitCode(const B: OpCode);
+    procedure emitBytes(const B1, B2: Byte);
+    procedure emitReturn();
+    procedure emitConstant(const V: TValue);
+    procedure endCompiler();
+    procedure number();
+    procedure parsePrecedense(const P: TPrecedence);
+    procedure expression();
+    procedure binary();
+    procedure unary();
+    procedure grouping();
+    function compile_(const source: string; var C: TChunk): Boolean;
+  end;
+
 function compile(const source: string; var C: TChunk): Boolean;
-var
-  scanner: TLoxScanner;
-  parser: TParser;
-  compilingChunk: TChunk;
-  parseRules: array[TokenType] of TParseRule;
-
-  function currentChunk: TChunk;
-  begin
-    Result := compilingChunk;
+begin
+  with TCompiler.Create do
+  try
+    Result := compile_(source, C);
+  finally
+    Free;
   end;
+end;
 
-  procedure errorAt(const T: TToken; const msg: PChar);
-  begin
-    if parser.panicMode then Exit;
-    parser.panicMode := true;
-    printf('[line %d] Error', [T.line], true);
+{ TCompiler }
 
-    if T.type_ = TOKEN_EOF then
-      print(' at end', true)
-    else if T.type_ = TOKEN_ERROR then
-      begin end // nothing ?
-    else
-      printf(' at "%.*s"', [T.length, T.start], true);
+constructor TCompiler.Create;
 
-    printf(': %s'+NL, [msg], true);
-    parser.hadError := true;
-  end;
-
-  procedure error(const msg: PChar);
-  begin
-    errorAt(parser.previous, msg);
-  end;
-
-  procedure errorAtCurrent(const msg: PChar);
-  begin
-    errorAt(parser.current, msg);
-  end;
-
-  procedure advance();
-  begin
-    parser.previous := parser.current;
-    while true do
-    begin
-      parser.current := scanner.scanToken();
-      if parser.current.type_ <> TOKEN_ERROR then
-        Break;
-      errorAtCurrent(parser.current.start);
-    end;
-  end;
-
-  procedure consume(const type_: TokenType; const msg: PChar);
-  begin
-    if parser.current.type_ = type_ then
-    begin
-      advance();
-      Exit;
-    end;
-
-    errorAtCurrent(msg);
-  end;
-
-  procedure emitByte(const B: Byte);
-  begin
-    currentChunk().write(B, parser.previous.line);
-  end;
-
-  procedure emitCode(const B: OpCode);
-  begin
-    currentChunk().write(B, parser.previous.line);
-  end;
-
-  procedure emitBytes(const B1, B2: Byte);
-  begin
-    emitByte(B1);
-    emitByte(B2);
-  end;
-
-  procedure emitReturn();
-  begin
-    emitCode(OP_RETURN);
-  end;
-
-  procedure emitConstant(const V: TValue);
-  begin
-    currentChunk().writeConstant(V, parser.previous.line);
-  end;
-
-  procedure endCompiler();
-  begin
-    emitReturn();
-  end;
-
-  procedure number();
-  var
-    value: double;
-  begin
-    value := strtod(copy(parser.previous.start, 1, parser.previous.length));
-    emitConstant(value);
-  end;
-
-  procedure parsePrecedense(const P: TPrecedence);
-  begin
-
-  end;
-
-  procedure expression();
-  begin
-    parsePrecedense(PREC_ASSIGNMENT);
-  end;
-
-  procedure binary();
-  var
-    oper_type: TokenType;
-  begin
-    oper_type := parser.previous.type_;
-
-    case oper_type of
-      TOKEN_PLUS:  emitCode(OP_ADD);
-      TOKEN_MINUS: emitCode(OP_SUBTRACT);
-      TOKEN_STAR:  emitCode(OP_MULTIPLY);
-      TOKEN_SLASH: emitCode(OP_DIVIDE);
-    end;
-  end;
-
-  procedure unary();
-  var
-    oper_type: TokenType;
-  begin
-    oper_type := parser.previous.type_;
-
-    parsePrecedense(PREC_UNARY);
-
-    case oper_type of
-      TOKEN_MINUS: emitCode(OP_NEGATE);
-    end;
-  end;
-
-  procedure grouping();
-  begin
-    expression();
-    consume(TOKEN_RIGHT_PAREN, 'Expect ")" after expression.');
-  end;
-
-  procedure init_rule(const token: TokenType; const prefix, infix: TProcedure; const precedence: TPrecedence);
+  procedure init_rule(const token: TokenType; const prefix, infix: TParseProc; const precedence: TPrecedence);
   begin
     parseRules[token].prefix := prefix;
     parseRules[token].infix := infix;
     parseRules[token].precedence := precedence;
   end;
 
-  procedure init_parseRules();
+begin
+  init_rule(TOKEN_LEFT_PAREN   , @grouping, nil    , PREC_NONE);
+  init_rule(TOKEN_RIGHT_PAREN  , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_LEFT_BRACE   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_RIGHT_BRACE  , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_COMMA        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_DOT          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_MINUS        , @unary   , @binary, PREC_TERM);
+  init_rule(TOKEN_PLUS         , nil      , @binary, PREC_TERM);
+  init_rule(TOKEN_SEMICOLON    , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_SLASH        , nil      , @binary, PREC_FACTOR);
+  init_rule(TOKEN_STAR         , nil      , @binary, PREC_FACTOR);
+  init_rule(TOKEN_BANG         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_BANG_EQUAL   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_EQUAL        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_EQUAL_EQUAL  , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_GREATER      , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_GREATER_EQUAL, nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_LESS         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_LESS_EQUAL   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_IDENTIFIER   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_STRING       , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_NUMBER       , @number  , nil    , PREC_NONE);
+  init_rule(TOKEN_AND          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_CLASS        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_ELSE         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_FALSE        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_FOR          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_FUN          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_IF           , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_NIL          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_OR           , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_PRINT        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_RETURN       , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_SUPER        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_THIS         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_TRUE         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_VAR          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_WHILE        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_ERROR        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_EOF          , nil      , nil    , PREC_NONE);
+end;
+
+function TCompiler.currentChunk: TChunk;
+begin
+  Result := compilingChunk;
+end;
+
+procedure TCompiler.errorAt(const T: TToken; const msg: PChar);
+begin
+  if parser.panicMode then Exit;
+  parser.panicMode := true;
+  printf('[line %d] Error', [T.line], true);
+
+  if T.type_ = TOKEN_EOF then
+    print(' at end', true)
+  else if T.type_ = TOKEN_ERROR then
+    begin end // nothing ?
+  else
+    printf(' at "%.*s"', [T.length, T.start], true);
+
+  printf(': %s'+NL, [msg], true);
+  parser.hadError := true;
+end;
+
+procedure TCompiler.error(const msg: PChar);
+begin
+  errorAt(parser.previous, msg);
+end;
+
+procedure TCompiler.errorAtCurrent(const msg: PChar);
+begin
+  errorAt(parser.current, msg);
+end;
+
+procedure TCompiler.advance();
+begin
+  parser.previous := parser.current;
+  while true do
   begin
-    init_rule(TOKEN_LEFT_PAREN   , @grouping, nil    , PREC_NONE);
-    init_rule(TOKEN_RIGHT_PAREN  , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_LEFT_BRACE   , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_RIGHT_BRACE  , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_COMMA        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_DOT          , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_MINUS        , @unary   , @binary, PREC_TERM);
-    init_rule(TOKEN_PLUS         , nil      , @binary, PREC_TERM);
-    init_rule(TOKEN_SEMICOLON    , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_SLASH        , nil      , @binary, PREC_FACTOR);
-    init_rule(TOKEN_STAR         , nil      , @binary, PREC_FACTOR);
-    init_rule(TOKEN_BANG         , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_BANG_EQUAL   , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_EQUAL        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_EQUAL_EQUAL  , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_GREATER      , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_GREATER_EQUAL, nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_LESS         , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_LESS_EQUAL   , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_IDENTIFIER   , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_STRING       , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_NUMBER       , @number  , nil    , PREC_NONE);
-    init_rule(TOKEN_AND          , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_CLASS        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_ELSE         , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_FALSE        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_FOR          , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_FUN          , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_IF           , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_NIL          , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_OR           , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_PRINT        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_RETURN       , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_SUPER        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_THIS         , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_TRUE         , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_VAR          , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_WHILE        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_ERROR        , nil      , nil    , PREC_NONE);
-    init_rule(TOKEN_EOF          , nil      , nil    , PREC_NONE);
+    parser.current := scanner.scanToken();
+    if parser.current.type_ <> TOKEN_ERROR then
+      Break;
+    errorAtCurrent(parser.current.start);
+  end;
+end;
+
+procedure TCompiler.consume(const type_: TokenType; const msg: PChar);
+begin
+  if parser.current.type_ = type_ then
+  begin
+    advance();
+    Exit;
   end;
 
+  errorAtCurrent(msg);
+end;
+
+procedure TCompiler.emitByte(const B: Byte);
 begin
-  init_parseRules();
+  currentChunk().write(B, parser.previous.line);
+end;
+
+procedure TCompiler.emitCode(const B: OpCode);
+begin
+  currentChunk().write(B, parser.previous.line);
+end;
+
+procedure TCompiler.emitBytes(const B1, B2: Byte);
+begin
+  emitByte(B1);
+  emitByte(B2);
+end;
+
+procedure TCompiler.emitReturn();
+begin
+  emitCode(OP_RETURN);
+end;
+
+procedure TCompiler.emitConstant(const V: TValue);
+begin
+  currentChunk().writeConstant(V, parser.previous.line);
+end;
+
+procedure TCompiler.endCompiler();
+begin
+  emitReturn();
+end;
+
+procedure TCompiler.number();
+var
+  value: double;
+begin
+  value := strtod(copy(parser.previous.start, 1, parser.previous.length));
+  emitConstant(value);
+end;
+
+procedure TCompiler.parsePrecedense(const P: TPrecedence);
+begin
+
+end;
+
+procedure TCompiler.expression();
+begin
+  parsePrecedense(PREC_ASSIGNMENT);
+end;
+
+procedure TCompiler.binary();
+var
+  oper_type: TokenType;
+begin
+  oper_type := parser.previous.type_;
+
+  case oper_type of
+    TOKEN_PLUS:  emitCode(OP_ADD);
+    TOKEN_MINUS: emitCode(OP_SUBTRACT);
+    TOKEN_STAR:  emitCode(OP_MULTIPLY);
+    TOKEN_SLASH: emitCode(OP_DIVIDE);
+  end;
+end;
+
+procedure TCompiler.unary();
+var
+  oper_type: TokenType;
+begin
+  oper_type := parser.previous.type_;
+
+  parsePrecedense(PREC_UNARY);
+
+  case oper_type of
+    TOKEN_MINUS: emitCode(OP_NEGATE);
+  end;
+end;
+
+procedure TCompiler.grouping();
+begin
+  expression();
+  consume(TOKEN_RIGHT_PAREN, 'Expect ")" after expression.');
+end;
+
+function TCompiler.compile_(const source: string; var C: TChunk): Boolean;
+begin
   parser.hadError := false;
   parser.panicMode := false;
 
