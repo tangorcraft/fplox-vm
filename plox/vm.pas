@@ -86,12 +86,18 @@ end;
 
 function TLoxVM.run: InterpretResult;
 var
-  instruction: Byte;
+  instruction: OpCode;
   constant: TValue;
 
   function READ_BYTE: Byte;
   begin
     Result := ip^;
+    Inc(ip);
+  end;
+
+  function READ_Code: OpCode;
+  begin
+    Result := OpCode(ip^);
     Inc(ip);
   end;
 
@@ -147,7 +153,7 @@ begin
     {$ifdef DEBUG_TRACE_EXECUTION}
     debug_trace;
     {$endif}
-    instruction := READ_BYTE;
+    instruction := READ_Code;
     case instruction of
       OP_HALT:
         Exit(INTERPRET_HALT);

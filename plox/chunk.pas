@@ -7,16 +7,20 @@ interface
 uses
   Classes, SysUtils, memory, value;
 
-const
-  OP_HALT = 0;
-  OP_RETURN = 1;
-  OP_CONSTANT = 2;
-  OP_NEGATE = 3;
-  OP_ADD = 4;
-  OP_SUBTRACT = 5;
-  OP_MULTIPLY = 6;
-  OP_DIVIDE = 7;
-  OP_CONSTANT_LONG = 8;
+type
+  OpCode = (
+    OP_HALT,
+    OP_RETURN,
+    OP_CONSTANT,
+    OP_NEGATE,
+    OP_ADD,
+    OP_SUBTRACT,
+    OP_MULTIPLY,
+    OP_DIVIDE,
+    OP_CONSTANT_LONG,
+
+    OP__Last
+  );
 
 type
 
@@ -33,7 +37,8 @@ type
 
     function addConstant(const V: TValue): Integer;
 
-    procedure write(const B: Byte; const line: Integer);
+    procedure write(const B: Byte; const line: Integer); overload;
+    procedure write(const B: OpCode; const line: Integer); overload;
     procedure write24(const I: Integer; const line: Integer);
     procedure writeConstant(const V: TValue; const line: Integer);
   end;
@@ -73,6 +78,11 @@ begin
   code[count] := B;
   lines[count] := line;
   inc(count);
+end;
+
+procedure TChunk.write(const B: OpCode; const line: Integer);
+begin
+  write(ord(B), line);
 end;
 
 procedure TChunk.write24(const I: Integer; const line: Integer);

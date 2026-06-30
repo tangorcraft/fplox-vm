@@ -58,7 +58,7 @@ end;
 
 function disassembleInstruction(const C: TChunk; const offset: integer): integer;
 var
-  instruction: Byte;
+  instruction: OpCode;
 begin
   printf('%.4d ', [offset]);
 
@@ -67,7 +67,7 @@ begin
   else
     printf('%4d ',[C.lines[offset]]);
 
-  instruction := C.code[offset];
+  instruction := OpCode(C.code[offset]);
   case (instruction) of
     OP_HALT:
       Result := simpleIntsruction('OP_HALT', offset);
