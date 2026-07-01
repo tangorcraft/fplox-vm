@@ -12,14 +12,21 @@ type
     OP_HALT,
     OP_RETURN,
     OP_CONSTANT,
+    OP_NIL,
+    OP_TRUE,
+    OP_FALSE,
+    OP_NOT,
     OP_NEGATE,
+    OP_EQUAL,
+    OP_GREATER,
+    OP_LESS,
     OP_ADD,
     OP_SUBTRACT,
     OP_MULTIPLY,
     OP_DIVIDE,
     OP_CONSTANT_LONG,
 
-    OP__Last
+    OP_Invalid
   );
 
 type

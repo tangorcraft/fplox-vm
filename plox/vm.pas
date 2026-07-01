@@ -1,11 +1,14 @@
 unit vm;
 
 {$mode ObjFPC}{$H+}
+{$define DEBUG_TRACE_EXECUTION}
 
 interface
 
 uses
-  Classes, SysUtils, compiler, debug, chunk, value, common;
+  Classes, SysUtils, compiler,
+  {$ifdef DEBUG_TRACE_EXECUTION}debug,{$endif}
+  chunk, value, common;
 
 const
   MAX_STACK = 1024;
@@ -30,6 +33,8 @@ type
     procedure resetStack;
     procedure push(const V: TValue);
     function pop: TValue;
+    function peek(const distance: Integer): PValue;
+    procedure runtimeError(const Fmt: string; vars: array of const);
   public
     constructor Create;
     destructor Destroy; override;
@@ -57,6 +62,23 @@ function TLoxVM.pop: TValue;
 begin
   dec(stackTop);
   Result := stackTop^;
+end;
+
+function TLoxVM.peek(const distance: Integer): PValue;
+begin
+  Result := stackTop - 1 - distance;
+end;
+
+procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const);
+var
+  instruction: SizeInt;
+  line: Integer;
+begin
+  printf(Fmt, vars, True);
+  print(NL);
+  instruction := SizeInt(ip - FChunk.code) - 1;
+  line := FChunk.lines[instruction];
+  printf('[line %d] in script'+NL, [line]);
 end;
 
 constructor TLoxVM.Create;
@@ -87,7 +109,8 @@ end;
 function TLoxVM.run: InterpretResult;
 var
   instruction: OpCode;
-  constant: TValue;
+  valA, valB: TValue;
+  pval: PValue;
 
   function READ_BYTE: Byte;
   begin
@@ -114,18 +137,26 @@ var
     Result := FChunk.constants.values[index];
   end;
 
-  procedure BINARY_OP();
+  function BINARY_NUM_OP(): Boolean;
   var
-    a, b: TValue;
+    a, b: double;
   begin
-    b := pop(); // order matters
-    a := pop();
-    case instruction of
-      OP_ADD     : push(a+b);
-      OP_SUBTRACT: push(a-b);
-      OP_MULTIPLY: push(a*b);
-      OP_DIVIDE  : push(a/b);
+    if not (IS_NUMBER(peek(0)^) and IS_NUMBER(peek(1)^)) then
+    begin
+      runtimeError('Operands must be numbers.',[]);
+      Exit(false);
     end;
+    b := pop().as_number; // order matters
+    a := pop().as_number;
+    case instruction of
+      OP_GREATER : push(BOOL_VAL(a > b));
+      OP_LESS    : push(BOOL_VAL(a < b));
+      OP_ADD     : push(NUMBER_VAL(a + b));
+      OP_SUBTRACT: push(NUMBER_VAL(a - b));
+      OP_MULTIPLY: push(NUMBER_VAL(a * b));
+      OP_DIVIDE  : push(NUMBER_VAL(a / b));
+    end;
+    Result := true;
   end;
 
   {$ifdef DEBUG_TRACE_EXECUTION}
@@ -163,16 +194,35 @@ begin
         Exit(INTERPRET_OK);
       end;
       OP_CONSTANT: begin
-        constant := READ_CONSTANT;
-        push(constant);
+        valA := READ_CONSTANT;
+        push(valA);
       end;
-      OP_NEGATE:
-        push(-pop());
+      OP_NIL: push(NIL_VAL);
+      OP_TRUE: push(BOOL_VAL(true));
+      OP_FALSE: push(BOOL_VAL(false));
+      OP_NOT:
+        push(BOOL_VAL(isFalsey(pop())));
+      OP_NEGATE: begin
+        pval := peek(0);
+        if not IS_NUMBER(pval^) then
+        begin
+          runtimeError('Operand must be a number.',[]);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+        pval^.as_number := -(pval^.as_number);
+      end;
+      OP_EQUAL: begin
+        valB := pop();
+        valA := pop();
+        push(BOOL_VAL(valuesEqual(valA, valB)));
+      end;
+      OP_GREATER,
+      OP_LESS,
       OP_ADD,
       OP_SUBTRACT,
       OP_MULTIPLY,
       OP_DIVIDE:
-        BINARY_OP();
+        if not BINARY_NUM_OP() then Exit(INTERPRET_RUNTIME_ERROR);
     end;
   end;
 end;

@@ -75,8 +75,22 @@ begin
       Result := simpleIntsruction('OP_RETURN', offset);
     OP_CONSTANT:
       Result := constantIntsruction('OP_CONSTANT', C, offset);
+    OP_NIL:
+      Result := simpleIntsruction('OP_NIL', offset);
+    OP_TRUE:
+      Result := simpleIntsruction('OP_TRUE', offset);
+    OP_FALSE:
+      Result := simpleIntsruction('OP_FALSE', offset);
+    OP_NOT:
+      Result := simpleIntsruction('OP_NOT', offset);
     OP_NEGATE:
       Result := simpleIntsruction('OP_NEGATE', offset);
+    OP_EQUAL:
+      Result := simpleIntsruction('OP_EQUAL', offset);
+    OP_GREATER:
+      Result := simpleIntsruction('OP_GREATER', offset);
+    OP_LESS:
+      Result := simpleIntsruction('OP_LESS', offset);
     OP_ADD:
       Result := simpleIntsruction('OP_ADD', offset);
     OP_SUBTRACT:

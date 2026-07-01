@@ -62,13 +62,14 @@ type
     procedure consume(const type_: TokenType; const msg: PChar);
     procedure emitByte(const B: Byte);
     procedure emitCode(const B: OpCode);
-    procedure emitBytes(const B1, B2: Byte);
+    procedure emitCodes(const B1, B2: OpCode);
     procedure emitReturn();
     procedure emitConstant(const V: TValue);
     procedure endCompiler();
     procedure parsePrecedense(const P: TPrecedence);
     procedure expression();
     procedure number();
+    procedure literal();
     procedure unary();
     procedure binary();
     procedure grouping();
@@ -108,31 +109,31 @@ begin
   init_rule(TOKEN_SEMICOLON    , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_SLASH        , nil      , @binary, PREC_FACTOR);
   init_rule(TOKEN_STAR         , nil      , @binary, PREC_FACTOR);
-  init_rule(TOKEN_BANG         , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_BANG_EQUAL   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_BANG         , @unary   , nil    , PREC_NONE);
+  init_rule(TOKEN_BANG_EQUAL   , nil      , @binary, PREC_EQUALITY);
   init_rule(TOKEN_EQUAL        , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_EQUAL_EQUAL  , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_GREATER      , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_GREATER_EQUAL, nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_LESS         , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_LESS_EQUAL   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_EQUAL_EQUAL  , nil      , @binary, PREC_EQUALITY);
+  init_rule(TOKEN_GREATER      , nil      , @binary, PREC_COMPARISON);
+  init_rule(TOKEN_GREATER_EQUAL, nil      , @binary, PREC_COMPARISON);
+  init_rule(TOKEN_LESS         , nil      , @binary, PREC_COMPARISON);
+  init_rule(TOKEN_LESS_EQUAL   , nil      , @binary, PREC_COMPARISON);
   init_rule(TOKEN_IDENTIFIER   , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_STRING       , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_NUMBER       , @number  , nil    , PREC_NONE);
   init_rule(TOKEN_AND          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_CLASS        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_ELSE         , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_FALSE        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_FALSE        , @literal , nil    , PREC_NONE);
   init_rule(TOKEN_FOR          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_FUN          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_IF           , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_NIL          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_NIL          , @literal , nil    , PREC_NONE);
   init_rule(TOKEN_OR           , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_PRINT        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_RETURN       , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_SUPER        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_THIS         , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_TRUE         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_TRUE         , @literal , nil    , PREC_NONE);
   init_rule(TOKEN_VAR          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_WHILE        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_ERROR        , nil      , nil    , PREC_NONE);
@@ -204,10 +205,10 @@ begin
   currentChunk().write(B, parser.previous.line);
 end;
 
-procedure TCompiler.emitBytes(const B1, B2: Byte);
+procedure TCompiler.emitCodes(const B1, B2: OpCode);
 begin
-  emitByte(B1);
-  emitByte(B2);
+  emitByte(ord(B1));
+  emitByte(ord(B2));
 end;
 
 procedure TCompiler.emitReturn();
@@ -262,7 +263,16 @@ var
   value: double;
 begin
   value := strtod(copy(parser.previous.start, 1, parser.previous.length));
-  emitConstant(value);
+  emitConstant(NUMBER_VAL(value));
+end;
+
+procedure TCompiler.literal();
+begin
+  case parser.previous.type_ of
+    TOKEN_FALSE: emitCode(OP_FALSE);
+    TOKEN_NIL: emitCode(OP_NIL);
+    TOKEN_TRUE: emitCode(OP_TRUE);
+  end;
 end;
 
 procedure TCompiler.unary();
@@ -274,6 +284,7 @@ begin
   parsePrecedense(PREC_UNARY);
 
   case oper_type of
+    TOKEN_BANG: emitCode(OP_NOT);
     TOKEN_MINUS: emitCode(OP_NEGATE);
   end;
 end;
@@ -286,6 +297,12 @@ begin
   parsePrecedense(Succ(parseRules[oper_type].precedence));
 
   case oper_type of
+    TOKEN_BANG_EQUAL:    emitCodes(OP_EQUAL, OP_NOT);
+    TOKEN_EQUAL_EQUAL:   emitCode(OP_EQUAL);
+    TOKEN_GREATER:       emitCode(OP_GREATER);
+    TOKEN_GREATER_EQUAL: emitCodes(OP_LESS, OP_NOT);
+    TOKEN_LESS:          emitCode(OP_LESS);
+    TOKEN_LESS_EQUAL:    emitCodes(OP_GREATER, OP_NOT);
     TOKEN_PLUS:  emitCode(OP_ADD);
     TOKEN_MINUS: emitCode(OP_SUBTRACT);
     TOKEN_STAR:  emitCode(OP_MULTIPLY);
