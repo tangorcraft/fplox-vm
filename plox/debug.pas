@@ -12,8 +12,17 @@ function disassembleInstruction(const C: TChunk; const offset: integer): integer
 
 implementation
 
-function simpleIntsruction(const name: string; const offset: integer): integer;
+function simpleIntsruction(const name: string; const offset: integer): integer; overload;
 begin
+  print(name+NL);
+  Result := offset + 1;
+end;
+
+function simpleIntsruction(const op: OpCode; const offset: integer): integer; overload;
+var
+  name: String;
+begin
+  Str(op, name);
   print(name+NL);
   Result := offset + 1;
 end;
@@ -69,38 +78,26 @@ begin
 
   instruction := OpCode(C.code[offset]);
   case (instruction) of
-    OP_HALT:
-      Result := simpleIntsruction('OP_HALT', offset);
+    OP_HALT,
     OP_RETURN:
-      Result := simpleIntsruction('OP_RETURN', offset);
+      Result := simpleIntsruction(instruction, offset);
     OP_CONSTANT:
       Result := constantIntsruction('OP_CONSTANT', C, offset);
-    OP_NIL:
-      Result := simpleIntsruction('OP_NIL', offset);
-    OP_TRUE:
-      Result := simpleIntsruction('OP_TRUE', offset);
-    OP_FALSE:
-      Result := simpleIntsruction('OP_FALSE', offset);
-    OP_NOT:
-      Result := simpleIntsruction('OP_NOT', offset);
-    OP_NEGATE:
-      Result := simpleIntsruction('OP_NEGATE', offset);
-    OP_EQUAL:
-      Result := simpleIntsruction('OP_EQUAL', offset);
-    OP_GREATER:
-      Result := simpleIntsruction('OP_GREATER', offset);
-    OP_LESS:
-      Result := simpleIntsruction('OP_LESS', offset);
-    OP_ADD:
-      Result := simpleIntsruction('OP_ADD', offset);
-    OP_SUBTRACT:
-      Result := simpleIntsruction('OP_SUBTRACT', offset);
-    OP_MULTIPLY:
-      Result := simpleIntsruction('OP_MULTIPLY', offset);
-    OP_DIVIDE:
-      Result := simpleIntsruction('OP_DIVIDE', offset);
     OP_CONSTANT_LONG:
       Result := constantLongIntsruction('OP_CONSTANT_LONG', C, offset);
+    OP_NIL,
+    OP_TRUE,
+    OP_FALSE,
+    OP_NOT,
+    OP_NEGATE,
+    OP_EQUAL,
+    OP_GREATER,
+    OP_LESS,
+    OP_ADD,
+    OP_SUBTRACT,
+    OP_MULTIPLY,
+    OP_DIVIDE:
+      Result := simpleIntsruction(instruction, offset);
 
   else
     begin

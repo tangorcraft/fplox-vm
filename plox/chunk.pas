@@ -12,6 +12,7 @@ type
     OP_HALT,
     OP_RETURN,
     OP_CONSTANT,
+    OP_CONSTANT_LONG,
     OP_NIL,
     OP_TRUE,
     OP_FALSE,
@@ -24,7 +25,6 @@ type
     OP_SUBTRACT,
     OP_MULTIPLY,
     OP_DIVIDE,
-    OP_CONSTANT_LONG,
 
     OP_Invalid
   );

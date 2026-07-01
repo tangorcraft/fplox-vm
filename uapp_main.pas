@@ -43,6 +43,7 @@ uses common;
 procedure TFMain.FormCreate(Sender: TObject);
 begin
   lox_output := @lox_string;
+  lox_error := @lox_string;
 end;
 
 procedure TFMain.BRunLoxClick(Sender: TObject);
@@ -69,6 +70,7 @@ end;
 procedure TFMain.FormDestroy(Sender: TObject);
 begin
   lox_output := nil;
+  lox_error := nil;
 end;
 
 procedure TFMain.lox_string(const S: string);

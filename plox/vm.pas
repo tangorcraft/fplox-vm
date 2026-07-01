@@ -75,10 +75,10 @@ var
   line: Integer;
 begin
   printf(Fmt, vars, True);
-  print(NL);
+  print(NL, true);
   instruction := SizeInt(ip - FChunk.code) - 1;
   line := FChunk.lines[instruction];
-  printf('[line %d] in script'+NL, [line]);
+  printf('[line %d] in script'+NL, [line], true);
 end;
 
 constructor TLoxVM.Create;
