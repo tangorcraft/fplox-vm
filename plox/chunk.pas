@@ -5,7 +5,7 @@ unit chunk;
 interface
 
 uses
-  Classes, SysUtils, memory, value;
+  Classes, SysUtils, memory, object_, value;
 
 type
   OpCode = (
@@ -38,6 +38,7 @@ type
     code: PByte;
     constants: TValueArray;
     lines: array of Integer;
+    objs: TObjectManager;
 
     constructor Create();
     destructor Destroy; override;
@@ -60,11 +61,13 @@ begin
   code := Grow;
   SetLength(lines, capacity);
   constants := TValueArray.Create();
+  objs := TObjectManager.Create;
 end;
 
 destructor TChunk.Destroy;
 begin
   constants.Free;
+  objs.Free;
   SetLength(lines, 0);
   inherited Destroy;
 end;

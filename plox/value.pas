@@ -12,14 +12,27 @@ type
     VAL_BOOL,
     VAL_NIL,
     VAL_NUMBER,
+    VAL_OBJ,
 
     VAL_Invalid
   );
+
+  ObjType = (
+    OBJ_STRING
+  );
+
+  PLoxObj = ^TLoxObj;
+  TLoxObj = record
+    type_: ObjType;
+    size: SizeInt;
+    next: PLoxObj;
+  end;
 
   TValue = record
     case type_: ValueType of
     VAL_BOOL: (as_bool: Boolean);
     VAL_NUMBER: (as_number: Double);
+    VAL_OBJ: (as_obj: PLoxObj);
   end;
   PValue = ^TValue;
 
@@ -40,12 +53,17 @@ function valuesEqual(const A, B: TValue): Boolean;
 
 function BOOL_VAL(const V: boolean): TValue;
 function NUMBER_VAL(const V: double): TValue;
+function OBJ_VAL(const V: Pointer): TValue;
 const NIL_VAL: TValue = (type_: VAL_NIL; as_number: 0.0;);
 function IS_BOOL(const V: TValue): Boolean;
 function IS_NUMBER(const V: TValue): Boolean;
 function IS_NIL(const V: TValue): Boolean;
+function IS_OBJ(const V: TValue): Boolean;
 
 implementation
+
+uses
+  object_;
 
 const
   b_to_s: array[Boolean] of string = ('false', 'true');
@@ -56,8 +74,8 @@ begin
     VAL_BOOL: print(b_to_s[V.as_bool]);
     VAL_NIL: print('nil');
     VAL_NUMBER: printf('%g',[V.as_number]);
+    VAL_OBJ: printObject(V);
   end;
-
 end;
 
 function isFalsey(const V: TValue): Boolean;
@@ -73,6 +91,7 @@ begin
     VAL_BOOL: Exit(a.as_bool = b.as_bool);
     VAL_NIL: Exit(True);
     VAL_NUMBER: Exit(a.as_number = b.as_number);
+    VAL_OBJ: Exit(stringEqual(A, B));
   end;
   Result := false;
 end;
@@ -90,6 +109,12 @@ begin
   Result.as_number := V;
 end;
 
+function OBJ_VAL(const V: Pointer): TValue;
+begin
+  Result.type_ := VAL_OBJ;
+  Result.as_obj := V;
+end;
+
 function IS_BOOL(const V: TValue): Boolean;
 begin
   Result := V.type_ = VAL_BOOL;
@@ -103,6 +128,11 @@ end;
 function IS_NIL(const V: TValue): Boolean;
 begin
   Result := V.type_ = VAL_NIL;
+end;
+
+function IS_OBJ(const V: TValue): Boolean;
+begin
+  Result := V.type_ = VAL_OBJ;
 end;
 
 { TValueArray }

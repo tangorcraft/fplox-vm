@@ -8,7 +8,7 @@ interface
 uses
   Classes, SysUtils, compiler,
   {$ifdef DEBUG_TRACE_EXECUTION}debug,{$endif}
-  chunk, value, common;
+  chunk, object_, value, memory, common;
 
 const
   MAX_STACK = 1024;
@@ -29,6 +29,7 @@ type
     ip: PByte;
     stack: array[0..MAX_STACK] of TValue;
     stackTop: PValue;
+    objs: TObjectManager;
 
     procedure resetStack;
     procedure push(const V: TValue);
@@ -84,10 +85,12 @@ end;
 constructor TLoxVM.Create;
 begin
   resetStack;
+  objs := TObjectManager.Create;
 end;
 
 destructor TLoxVM.Destroy;
 begin
+  objs.Free;
   inherited Destroy;
 end;
 
@@ -159,6 +162,22 @@ var
     Result := true;
   end;
 
+  procedure concatenate();
+  var
+    a, b: PObjString;
+    len: Integer;
+    s: PChar;
+  begin
+    b := AS_STRING(pop());
+    a := AS_STRING(pop());
+    len := a^.length_ + b^.length_;
+    s := GROW_ARRAY(nil, 0, len + 1, SizeOf(char));
+    memcpy(s, a^.chars, SizeOf(char) * a^.length_);
+    memcpy(s + a^.length_, b^.chars, SizeOf(char) * b^.length_);
+    s[len] := #0;
+    push(OBJ_VAL(objs.takeString(s, len)));
+  end;
+
   {$ifdef DEBUG_TRACE_EXECUTION}
   procedure debug_trace;
   var
@@ -217,8 +236,22 @@ begin
         push(BOOL_VAL(valuesEqual(valA, valB)));
       end;
       OP_GREATER,
-      OP_LESS,
-      OP_ADD,
+      OP_LESS:
+        if not BINARY_NUM_OP() then Exit(INTERPRET_RUNTIME_ERROR);
+      OP_ADD: begin
+        if IS_STRING(peek(0)^) and IS_STRING(peek(1)^) then
+          concatenate()
+        else if IS_NUMBER(peek(0)^) and IS_NUMBER(peek(1)^) then
+        begin
+          valB := pop();
+          valA := pop();
+          push(NUMBER_VAL(valA.as_number + valB.as_number));
+        end
+        else begin
+          runtimeError('Operands must be two numbers or two strings.',[]);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+      end;
       OP_SUBTRACT,
       OP_MULTIPLY,
       OP_DIVIDE:

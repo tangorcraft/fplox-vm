@@ -8,7 +8,7 @@ interface
 uses
   Classes, SysUtils, scanner,
   {$ifdef DEBUG_PRINT_CODE}debug,{$endif}
-  chunk, value, memory, common;
+  chunk, object_, value, memory, common;
 
 function compile(const source: string; var C: TChunk): Boolean;
 
@@ -70,6 +70,7 @@ type
     procedure expression();
     procedure number();
     procedure literal();
+    procedure string_();
     procedure unary();
     procedure binary();
     procedure grouping();
@@ -118,7 +119,7 @@ begin
   init_rule(TOKEN_LESS         , nil      , @binary, PREC_COMPARISON);
   init_rule(TOKEN_LESS_EQUAL   , nil      , @binary, PREC_COMPARISON);
   init_rule(TOKEN_IDENTIFIER   , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_STRING       , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_STRING       , @string_ , nil    , PREC_NONE);
   init_rule(TOKEN_NUMBER       , @number  , nil    , PREC_NONE);
   init_rule(TOKEN_AND          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_CLASS        , nil      , nil    , PREC_NONE);
@@ -273,6 +274,11 @@ begin
     TOKEN_NIL: emitCode(OP_NIL);
     TOKEN_TRUE: emitCode(OP_TRUE);
   end;
+end;
+
+procedure TCompiler.string_();
+begin
+  emitConstant(OBJ_VAL(currentChunk().objs.copyString(parser.previous.start + 1, parser.previous.length - 2)));
 end;
 
 procedure TCompiler.unary();

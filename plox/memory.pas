@@ -8,8 +8,10 @@ uses
   Classes, SysUtils;
 
 function GROW_CAPACITY(const old: Integer): Integer;
-function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer; const size: integer): Pointer;
-procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: Integer);
+function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer; const size: SizeInt): Pointer;
+procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: SizeInt);
+function ALLOCATE(const size: SizeInt): Pointer;
+procedure FREE_(const P: Pointer; const size: SizeInt);
 
 type
 
@@ -34,7 +36,7 @@ implementation
 const
   MaxWord = $FFFF;
 
-function reallocate(P: Pointer; const old_size: Integer; const new_size: Integer): Pointer;
+function reallocate(P: Pointer; const old_size: SizeInt; const new_size: SizeInt): Pointer;
 begin
   if new_size = 0 then
   begin
@@ -57,16 +59,25 @@ begin
     Result := old * 2;
 end;
 
-function GROW_ARRAY(const arr: Pointer; const old_count: integer;
-  const new_count: integer; const size: integer): Pointer;
+function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer;
+  const size: SizeInt): Pointer;
 begin
   Result := reallocate(arr, old_count * size, new_count * size);
 end;
 
-procedure FREE_ARRAY(const arr: Pointer; const count: Integer;
-  const size: Integer);
+procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: SizeInt);
 begin
   reallocate(arr, count * size, 0);
+end;
+
+function ALLOCATE(const size: SizeInt): Pointer;
+begin
+  Result := reallocate(nil, 0, size);
+end;
+
+procedure FREE_(const P: Pointer; const size: SizeInt);
+begin
+  reallocate(P, size, 0);
 end;
 
 { TMemArray }

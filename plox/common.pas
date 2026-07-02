@@ -22,6 +22,7 @@ procedure print(S: string; const err: Boolean = false);
 procedure printf(const Fmt: string; vars: array of const; const err: Boolean = false);
 
 function memcmp(const p1, p2: Pointer; const count: SizeInt): boolean;
+procedure memcpy(const dest, source: Pointer; const count: SizeInt);
 function strtod(const S: string): Double;
 
 implementation
@@ -86,6 +87,11 @@ end;
 function memcmp(const p1, p2: Pointer; const count: SizeInt): boolean;
 begin
   Result := CompareByte(p1^, p2^, count) = 0;
+end;
+
+procedure memcpy(const dest, source: Pointer; const count: SizeInt);
+begin
+  Move(source^, dest^, count);
 end;
 
 function strtod(const S: string): Double;
