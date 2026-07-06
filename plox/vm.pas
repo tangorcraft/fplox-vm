@@ -96,7 +96,7 @@ end;
 
 function TLoxVM.interpret(const source: string): InterpretResult;
 begin
-  FChunk := TChunk.Create();
+  FChunk := TChunk.Create(objs);
   try
     if not compile(source, FChunk) then
       Exit(INTERPRET_COMPILE_ERROR);

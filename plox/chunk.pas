@@ -40,7 +40,7 @@ type
     lines: array of Integer;
     objs: TObjectManager;
 
-    constructor Create();
+    constructor Create(const aObjs: TObjectManager);
     destructor Destroy; override;
 
     function addConstant(const V: TValue): Integer;
@@ -55,19 +55,18 @@ implementation
 
 { TChunk }
 
-constructor TChunk.Create();
+constructor TChunk.Create(const aObjs: TObjectManager);
 begin
   Init(SizeOf(Byte));
   code := Grow;
   SetLength(lines, capacity);
   constants := TValueArray.Create();
-  objs := TObjectManager.Create;
+  objs := aObjs;
 end;
 
 destructor TChunk.Destroy;
 begin
   constants.Free;
-  objs.Free;
   SetLength(lines, 0);
   inherited Destroy;
 end;

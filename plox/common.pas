@@ -25,6 +25,8 @@ function memcmp(const p1, p2: Pointer; const count: SizeInt): boolean;
 procedure memcpy(const dest, source: Pointer; const count: SizeInt);
 function strtod(const S: string): Double;
 
+function hashStringNZ(S: PChar; len: Integer): UInt32;
+
 implementation
 
 type
@@ -112,6 +114,25 @@ begin
   end;
   if (E<>0) then
     Result := NaN;
+end;
+
+const
+  FNV_Basis32 = $811c9dc5;
+  FNV_Prime32 = $01000193;
+  FNV_Basis64 = $cbf29ce484222325;
+  FNV_Prime64 = $100000001b3;
+
+function hashStringNZ(S: PChar; len: Integer): UInt32;
+begin
+  Result := FNV_Basis32;
+  while len > 0 do
+  begin
+    Result := (Ord(S^) xor Result) * FNV_Prime32;
+    dec(len);
+    inc(S);
+  end;
+  if Result = 0 then // no zero result
+    Result := FNV_Basis32;
 end;
 
 initialization

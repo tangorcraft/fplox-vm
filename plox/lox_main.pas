@@ -13,7 +13,6 @@ type
 
   TLoxEngine = class
   private
-    FChunk: TChunk;
     VM: TLoxVM;
   public
     constructor Create();
@@ -28,13 +27,11 @@ implementation
 
 constructor TLoxEngine.Create();
 begin
-  FChunk := TChunk.Create;
   VM := TLoxVM.Create;
 end;
 
 destructor TLoxEngine.Destroy;
 begin
-  FChunk.Free;
   VM.Free;
   inherited Destroy;
 end;

@@ -11,7 +11,7 @@ uses
   {$ENDIF}
   Interfaces, // this includes the LCL widgetset
   Forms, uapp_main, lox_main, common, chunk, memory, debug, value, vm, compiler, scanner, 
-object_;
+object_, hash_set, hash_table;
 
 {$R *.res}
 
