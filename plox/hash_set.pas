@@ -20,20 +20,31 @@ type
   TKeyTable = class
   private
     FList: PKeyEntry;
-    FCount: Cardinal;
+    FLinkCount: Cardinal; // number of separate linked list entries
+    FGrowThreshold: Cardinal;
     FCapacity: Cardinal;
-
-    FObjs: TObjectManager;
 
     function tableFindKey(const chars: PChar; const len: Integer; const hash: uint32;
       out entry: PKeyEntry): Boolean;
-    function makeNext(const entry: PKeyEntry): PKeyEntry;
+    procedure grow();
+    function newNext(const entry: PKeyEntry): PKeyEntry;
     function tableGetEntry(const chars: PChar; const len: Integer): PKeyEntry;
     procedure freeLinkedList(var top: PKeyEntry);
   public
-    constructor Create(const mgr: TObjectManager);
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+  { TObjectManager_SI: String Interning}
+
+  TObjectManager_SI = class(TObjectManager)
+  private
+    FHashSet: TKeyTable;
+  public
+    constructor Create;
     destructor Destroy; override;
 
+    // hiding methods of the parent class
     function takeString(const chars: PChar; const len: Integer): PObjString;
     function copyString(const start: PChar; const len: Integer): PObjString;
   end;
@@ -42,6 +53,7 @@ implementation
 
 const
   entrySize = SizeOf(TKeyEntry);
+  HASHSET_MAX_LOAD = 0.4; // LinkCount to Capacity ratio
 
 { TKeyTable }
 
@@ -67,8 +79,84 @@ begin
   Result := False;
 end;
 
-function TKeyTable.makeNext(const entry: PKeyEntry): PKeyEntry;
+procedure TKeyTable.grow();
+var
+  old_size, i: Integer;
+  old_list, bin: PKeyEntry;
+  iter_entry: PKeyEntry;
+
+  function newEntryTop(var top: PKeyEntry): PKeyEntry;
+  begin
+    if bin = nil then
+      Result := ALLOCATE(entrySize)
+    else begin
+      Result := bin;
+      bin := bin^.next;
+    end;
+    Result^.next := top;
+    top := Result;
+  end;
+
+  procedure copyEntry(const copy_entry: TKeyEntry);
+  var
+    idx: Integer;
+    target_entry: PKeyEntry;
+  begin
+    idx := copy_entry.hash mod FCapacity;
+    target_entry := FList + idx;
+    if target_entry^.key <> nil then
+    begin
+      target_entry := newEntryTop(target_entry^.next);
+      inc(FLinkCount);
+    end;
+    target_entry^.key := copy_entry.key;
+    target_entry^.hash := copy_entry.hash;
+  end;
+
+  procedure copyLinkedList();
+  var
+    tmp_entry, copy_entry: PKeyEntry;
+  begin
+    copy_entry := iter_entry^.next;
+    while copy_entry <> nil do
+    begin
+      copyEntry(copy_entry^);
+      tmp_entry := copy_entry;
+      copy_entry := tmp_entry^.next; // next iteration
+      tmp_entry^.next := bin; // moving tmp to bin
+      bin := tmp_entry;
+    end;
+  end;
+
 begin
+  old_list := FList;
+  old_size := FCapacity;
+  FCapacity := GROW_CAPACITY(FCapacity + FLinkCount);
+  FLinkCount := 0;
+
+  FList := GROW_ARRAY(nil, 0, FCapacity, entrySize);
+  FillChar(FList^, FCapacity * entrySize, 0);
+  FGrowThreshold := Trunc(FCapacity * HASHSET_MAX_LOAD);
+  if old_list = nil then Exit;
+
+  bin := nil;
+  // when separately allocated key entry is copied
+  // it will be moved to bin, a linked list, instead of being freed
+  // if new collisions occur, entries from bin will be used instead of allocating new entry
+  // it is possible that freeing them immediately and allocating new entry as/if needed will be faster
+  for i := 0 to old_size - 1 do
+  begin
+    iter_entry := old_list + i;
+    copyLinkedList();
+    copyEntry(iter_entry^);
+  end;
+  FREE_ARRAY(old_list, old_size, entrySize);
+  freeLinkedList(bin);
+end;
+
+function TKeyTable.newNext(const entry: PKeyEntry): PKeyEntry;
+begin
+  inc(FLinkCount);
   Result := ALLOCATE(entrySize);
   Result^.next := nil;
   Result^.key := nil;
@@ -79,11 +167,13 @@ function TKeyTable.tableGetEntry(const chars: PChar; const len: Integer): PKeyEn
 var
   hash: UInt32;
 begin
+  if (FLinkCount >= FGrowThreshold) then
+    grow();
   hash := hashStringNZ(chars, len);
   if not tableFindKey(chars, len, hash, Result) then
   begin
     if Result^.key <> nil then
-      Result := makeNext(Result);
+      Result := newNext(Result);
     Result^.hash := hash;
   end;
 end;
@@ -100,49 +190,64 @@ begin
   end;
 end;
 
-constructor TKeyTable.Create(const mgr: TObjectManager);
+constructor TKeyTable.Create;
 begin
-  FCount := 0;
-  FCapacity := 16;
-  FObjs := mgr;
-  FList := GROW_ARRAY(nil, 0, FCapacity, entrySize);
+  FLinkCount := 0;
+  FCapacity := 0;
+  FList := nil;
+  grow();
 end;
 
 destructor TKeyTable.Destroy;
 var
   i: Cardinal;
 begin
+  // hash set does not own any objects, so we only need to free memory for the key entries
   for i := 0 to FCapacity - 1 do
     freeLinkedList(FList[i].next);
   FREE_ARRAY(FList, FCapacity, entrySize);
   inherited Destroy;
 end;
 
-function TKeyTable.takeString(const chars: PChar; const len: Integer): PObjString;
+{ TObjectManager_SI }
+
+constructor TObjectManager_SI.Create;
+begin
+  inherited Create;
+  FHashSet := TKeyTable.Create;
+end;
+
+destructor TObjectManager_SI.Destroy;
+begin
+  FHashSet.Free;
+  inherited Destroy;
+end;
+
+function TObjectManager_SI.takeString(const chars: PChar; const len: Integer): PObjString;
 var
   entry: PKeyEntry;
 begin
-  entry := tableGetEntry(chars, len);
+  entry := FHashSet.tableGetEntry(chars, len);
   if entry^.key <> nil then
   begin
     FREE_ARRAY(chars, len, SizeOf(Char));
     Exit(entry^.key)
   end
   else begin
-    Result := FObjs.takeString(chars, len);
+    Result := inherited takeString(chars, len);
     entry^.key := Result;
   end;
 end;
 
-function TKeyTable.copyString(const start: PChar; const len: Integer): PObjString;
+function TObjectManager_SI.copyString(const start: PChar; const len: Integer): PObjString;
 var
   entry: PKeyEntry;
 begin
-  entry := tableGetEntry(start, len);
+  entry := FHashSet.tableGetEntry(start, len);
   if entry^.key <> nil then
     Exit(entry^.key)
   else begin
-    Result := FObjs.copyString(start, len);
+    Result := inherited copyString(start, len);
     entry^.key := Result;
   end;
 end;

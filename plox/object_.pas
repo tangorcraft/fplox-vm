@@ -21,14 +21,15 @@ type
   private
     function allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
     function allocateString(const start: PChar; const len: Integer): PObjString;
+  protected
+    // moving to protected, should be only called from child class (string interning)
+    function takeString(const chars: PChar; const len: Integer): PObjString;
+    function copyString(const start: PChar; const len: Integer): PObjString;
   public
     objectsTop: PLoxObj;
 
     constructor Create;
     destructor Destroy; override;
-
-    function takeString(const chars: PChar; const len: Integer): PObjString;
-    function copyString(const start: PChar; const len: Integer): PObjString;
   end;
 
 function OBJ_TYPE(const V: TValue): ObjType;

@@ -8,7 +8,7 @@ interface
 uses
   Classes, SysUtils, compiler,
   {$ifdef DEBUG_TRACE_EXECUTION}debug,{$endif}
-  chunk, object_, value, memory, common;
+  chunk, hash_set, object_, value, memory, common;
 
 const
   MAX_STACK = 1024;
@@ -29,7 +29,7 @@ type
     ip: PByte;
     stack: array[0..MAX_STACK] of TValue;
     stackTop: PValue;
-    objs: TObjectManager;
+    objs: TObjectManager_SI;
 
     procedure resetStack;
     procedure push(const V: TValue);
@@ -85,7 +85,7 @@ end;
 constructor TLoxVM.Create;
 begin
   resetStack;
-  objs := TObjectManager.Create;
+  objs := TObjectManager_SI.Create;
 end;
 
 destructor TLoxVM.Destroy;

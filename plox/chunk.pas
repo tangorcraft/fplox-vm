@@ -5,7 +5,7 @@ unit chunk;
 interface
 
 uses
-  Classes, SysUtils, memory, object_, value;
+  Classes, SysUtils, hash_set, object_, value, memory;
 
 type
   OpCode = (
@@ -38,9 +38,9 @@ type
     code: PByte;
     constants: TValueArray;
     lines: array of Integer;
-    objs: TObjectManager;
+    objs: TObjectManager_SI;
 
-    constructor Create(const aObjs: TObjectManager);
+    constructor Create(const aObjs: TObjectManager_SI);
     destructor Destroy; override;
 
     function addConstant(const V: TValue): Integer;
@@ -55,7 +55,7 @@ implementation
 
 { TChunk }
 
-constructor TChunk.Create(const aObjs: TObjectManager);
+constructor TChunk.Create(const aObjs: TObjectManager_SI);
 begin
   Init(SizeOf(Byte));
   code := Grow;
