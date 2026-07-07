@@ -1,6 +1,7 @@
 unit hash_table;
 
 {$mode ObjFPC}{$H+}
+{$i defines.inc}
 
 interface
 

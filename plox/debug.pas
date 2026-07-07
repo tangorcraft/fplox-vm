@@ -1,6 +1,7 @@
 unit debug;
 
 {$mode ObjFPC}{$H+}
+{$i defines.inc}
 
 interface
 

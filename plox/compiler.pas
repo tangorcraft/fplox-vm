@@ -1,7 +1,7 @@
 unit compiler;
 
 {$mode ObjFPC}{$H+}
-{$define DEBUG_PRINT_CODE}
+{$i defines.inc}
 
 interface
 

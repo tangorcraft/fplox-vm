@@ -1,6 +1,7 @@
 unit value;
 
 {$mode ObjFPC}{$H+}
+{$i defines.inc}
 
 interface
 

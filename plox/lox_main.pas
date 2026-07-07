@@ -1,6 +1,7 @@
 unit lox_main;
 
 {$mode ObjFPC}{$H+}
+{$i defines.inc}
 
 interface
 

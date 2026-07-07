@@ -1,6 +1,7 @@
 unit chunk;
 
 {$mode ObjFPC}{$H+}
+{$i defines.inc}
 
 interface
 

@@ -1,6 +1,7 @@
 unit common;
 
 {$mode ObjFPC}{$H+}
+{$i defines.inc}
 
 interface
 
@@ -25,9 +26,14 @@ function memcmp(const p1, p2: Pointer; const count: SizeInt): boolean;
 procedure memcpy(const dest, source: Pointer; const count: SizeInt);
 function strtod(const S: string): Double;
 
-function hashStringNZ(S: PChar; len: Integer): UInt32;
+function hashStringNZ(const S: PChar; const len: Integer): UInt32;
 
 implementation
+
+{$ifdef USE_SIPHASH}
+uses
+  siphash_1_3;
+{$endif}
 
 type
   TOutputProc = procedure(const S: string);
@@ -116,13 +122,17 @@ begin
     Result := NaN;
 end;
 
+{$ifdef USE_SIPHASH}
+var
+  sip_key: packed array[0..15] of Byte;
+{$else}
 const
   FNV_Basis32 = $811c9dc5;
   FNV_Prime32 = $01000193;
   FNV_Basis64 = $cbf29ce484222325;
   FNV_Prime64 = $100000001b3;
 
-function hashStringNZ(S: PChar; len: Integer): UInt32;
+function hash_FNV_1a(S: PChar; len: Integer): UInt32;
 begin
   Result := FNV_Basis32;
   while len > 0 do
@@ -131,12 +141,38 @@ begin
     dec(len);
     inc(S);
   end;
+end;
+
+function hash_FNV_1a_64(S: PChar; len: Integer): UInt64;
+begin
+  Result := FNV_Basis64;
+  while len > 0 do
+  begin
+    Result := (Ord(S^) xor Result) * FNV_Prime64;
+    dec(len);
+    inc(S);
+  end;
+end;
+{$endif}
+
+function hashStringNZ(const S: PChar; const len: Integer): UInt32;
+begin
+  {$ifdef USE_SIPHASH}
+  halfsiphash_1_3(S, len, @sip_key[0], PByte(@Result), half_out_len_4b);
+  {$else}
+  Result := hash_FNV_1a(S, len);
+  {$endif}
   if Result = 0 then // no zero result
-    Result := FNV_Basis32;
+    Result := MaxLongint;
 end;
 
 initialization
   std.proc := @internal_print;
   stderr.proc := @internal_print_err;
+  {$ifdef USE_SIPHASH}
+  Randomize;
+  PInt64(@sip_key[0])^ := Random(high(Int64));
+  PInt64(@sip_key[8])^ := Random(high(Int64));
+  {$endif}
 end.
 

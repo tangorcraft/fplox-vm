@@ -1,7 +1,7 @@
 unit vm;
 
 {$mode ObjFPC}{$H+}
-{$define DEBUG_TRACE_EXECUTION}
+{$i defines.inc}
 
 interface
 
