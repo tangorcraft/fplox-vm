@@ -13,6 +13,7 @@ type
     obj: TLoxObj;
     length_: Integer;
     chars: PChar;
+    hash: UInt32;
   end;
   PObjString = ^TObjString;
 
@@ -21,11 +22,11 @@ type
   TObjectManager = class
   private
     function allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
-    function allocateString(const start: PChar; const len: Integer): PObjString;
+    function allocateString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
   protected
     // moving to protected, should be only called from child class (string interning)
-    function takeString(const chars: PChar; const len: Integer): PObjString;
-    function copyString(const start: PChar; const len: Integer): PObjString;
+    function takeString(const chars: PChar; const len: Integer; const hash: UInt32): PObjString;
+    function copyString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
   public
     objectsTop: PLoxObj;
 
@@ -103,11 +104,13 @@ begin
   objectsTop := Result;
 end;
 
-function TObjectManager.allocateString(const start: PChar; const len: Integer): PObjString;
+function TObjectManager.allocateString(const start: PChar; const len: Integer;
+  const hash: UInt32): PObjString;
 begin
   Result := allocateObject(sizeof(TObjString), OBJ_STRING);
   Result^.chars := start;
   Result^.length_ := len;
+  Result^.hash := hash;
 end;
 
 constructor TObjectManager.Create;
@@ -128,12 +131,14 @@ begin
   inherited Destroy;
 end;
 
-function TObjectManager.takeString(const chars: PChar; const len: Integer): PObjString;
+function TObjectManager.takeString(const chars: PChar; const len: Integer;
+  const hash: UInt32): PObjString;
 begin
-  Result := allocateString(chars, len);
+  Result := allocateString(chars, len, hash);
 end;
 
-function TObjectManager.copyString(const start: PChar; const len: Integer): PObjString;
+function TObjectManager.copyString(const start: PChar; const len: Integer;
+  const hash: UInt32): PObjString;
 var
   heapChars: PChar;
   cnt: SizeInt;
@@ -142,7 +147,7 @@ begin
   heapChars := ALLOCATE(cnt);
   Move(start^, heapChars^, cnt);
   heapChars[len] := #0;
-  Result := allocateString(heapChars, len);
+  Result := allocateString(heapChars, len, hash);
 end;
 
 end.

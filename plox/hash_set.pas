@@ -235,7 +235,7 @@ begin
     Exit(entry^.key)
   end
   else begin
-    Result := inherited takeString(chars, len);
+    Result := inherited takeString(chars, len, entry^.hash);
     entry^.key := Result;
   end;
 end;
@@ -248,7 +248,7 @@ begin
   if entry^.key <> nil then
     Exit(entry^.key)
   else begin
-    Result := inherited copyString(start, len);
+    Result := inherited copyString(start, len, entry^.hash);
     entry^.key := Result;
   end;
 end;
