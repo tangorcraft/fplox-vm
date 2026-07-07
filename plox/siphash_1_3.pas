@@ -8,7 +8,7 @@ unit siphash_1_3;
   and [https://github.com/veorq/SipHash/blob/master/halfsiphash.c]
   using cROUNDS=1 and dROUNDS=3
 
-  Revision: throwing out endianness caring and accessing data directly
+  Revision 2: LEtoN (Little-Endian to native) and NtoLE exists
 *)
 
 interface
@@ -114,7 +114,9 @@ begin
   v2 := V2_base;
   v3 := V3_base;
   k0 := PUInt64(kk)^;
+  k0 := LEtoN(k0);
   k1 := PUInt64(kk + 8)^;
+  k1 := LEtoN(k1);
   ni_end := ni + (data_len - (data_len mod 8));
   left := data_len and 7;
   b := UInt64(data_len) shl 56;
@@ -129,6 +131,7 @@ begin
   while ni <> ni_end do
   begin
     m := PUInt64(ni)^;
+    m := LEtoN(m);
     v3 := v3 xor m;
     {$ifdef DEBUG_SIPHASH}TRACE();{$endif}
     SIPROUND(); // cROUNDS = 1
@@ -136,6 +139,7 @@ begin
     inc(ni, 8);
   end;
 
+  // this part handles data in right byte order independent of endianness
   m := 0;
   while left > 0 do
   begin
@@ -160,6 +164,7 @@ begin
   SIPROUND();
 
   b := v0 xor v1 xor v2 xor v3;
+  b := NtoLE(b);
   PUInt64(out_buf)^ := b;
 
   if out_len = sip_out_len_8b then
@@ -173,6 +178,7 @@ begin
   SIPROUND();
 
   b := v0 xor v1 xor v2 xor v3;
+  b := NtoLE(b);
   PUInt64(out_buf + 8)^ := b;
 
 end;
@@ -232,7 +238,9 @@ begin
   v2 := halfV2_base;
   v3 := halfV3_base;
   k0 := PUInt32(kk)^;
+  k0 := LEtoN(k0);
   k1 := PUInt32(kk + 4)^;
+  k1 := LEtoN(k1);
   ni_end := ni + (data_len - (data_len mod 4));
   left := data_len and 3;
   b := UInt32(data_len) shl 24;
@@ -247,6 +255,7 @@ begin
   while ni <> ni_end do
   begin
     m := PUInt32(ni)^;
+    m := LEtoN(m);
     v3 := v3 xor m;
     {$ifdef DEBUG_SIPHASH}TRACE();{$endif}
     SIPROUND(); // cROUNDS = 1
@@ -254,6 +263,7 @@ begin
     inc(ni, 4);
   end;
 
+  // this part handles data in right byte order independent of endianness
   m := 0;
   while left > 0 do
   begin
@@ -278,6 +288,7 @@ begin
   SIPROUND();
 
   b := v1 xor v3;
+  b := NtoLE(b);
   PUInt32(out_buf)^ := b;
 
   if out_len = half_out_len_4b then
@@ -291,6 +302,7 @@ begin
   SIPROUND();
 
   b := v1 xor v3;
+  b := NtoLE(b);
   PUInt32(out_buf + 4)^ := b;
 
 end;
