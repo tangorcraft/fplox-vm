@@ -158,6 +158,7 @@ end;
 function hashStringNZ(const S: PChar; const len: Integer): UInt32;
 begin
   {$ifdef USE_SIPHASH}
+  // 4 bytes halfSipHash out to uint32 Result
   halfsiphash_1_3(S, len, @sip_key[0], PByte(@Result), half_out_len_4b);
   {$else}
   Result := hash_FNV_1a(S, len);
