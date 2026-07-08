@@ -135,8 +135,7 @@ begin
   FCapacity := GROW_CAPACITY(FCapacity + FLinkCount);
   FLinkCount := 0;
 
-  FList := GROW_ARRAY(nil, 0, FCapacity, entrySize);
-  FillChar(FList^, FCapacity * entrySize, 0);
+  FList := ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
   FGrowThreshold := Trunc(FCapacity * HASHSET_MAX_LOAD);
   if old_list = nil then Exit;
 

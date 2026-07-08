@@ -10,6 +10,7 @@ uses
 
 function GROW_CAPACITY(const old: Integer): Integer;
 function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer; const size: SizeInt): Pointer;
+function ALLOC_AND_ZERO_ARRAY(const new_count: integer; const size: SizeInt): Pointer;
 procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: SizeInt);
 function ALLOCATE(const size: SizeInt): Pointer;
 procedure FREE_(const P: Pointer; const size: SizeInt);
@@ -64,6 +65,12 @@ function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_coun
   const size: SizeInt): Pointer;
 begin
   Result := reallocate(arr, old_count * size, new_count * size);
+end;
+
+function ALLOC_AND_ZERO_ARRAY(const new_count: integer; const size: SizeInt): Pointer;
+begin
+  Result := reallocate(nil, 0, new_count * size);
+  FillByte(Result^, new_count * size, 0);
 end;
 
 procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: SizeInt);

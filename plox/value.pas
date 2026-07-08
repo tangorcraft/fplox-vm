@@ -10,8 +10,8 @@ uses
 
 type
   ValueType = (
+    VAL_NIL = 0, // this way we can simply zero memory on hash table
     VAL_BOOL,
-    VAL_NIL,
     VAL_NUMBER,
     VAL_OBJ,
 
@@ -55,7 +55,11 @@ function valuesEqual(const A, B: TValue): Boolean;
 function BOOL_VAL(const V: boolean): TValue;
 function NUMBER_VAL(const V: double): TValue;
 function OBJ_VAL(const V: Pointer): TValue;
-const NIL_VAL: TValue = (type_: VAL_NIL; as_number: 0.0;);
+const
+  NIL_VAL: TValue = (type_: VAL_NIL; as_number: 0.0;);
+  TRUE_VAL: TValue = (type_: VAL_BOOL; as_bool: true;);
+  FALSE_VAL: TValue = (type_: VAL_BOOL; as_bool: false;);
+
 function IS_BOOL(const V: TValue): Boolean;
 function IS_NUMBER(const V: TValue): Boolean;
 function IS_NIL(const V: TValue): Boolean;
@@ -92,7 +96,7 @@ begin
     VAL_BOOL: Exit(a.as_bool = b.as_bool);
     VAL_NIL: Exit(True);
     VAL_NUMBER: Exit(a.as_number = b.as_number);
-    VAL_OBJ: Exit(stringEqual(A, B));
+    VAL_OBJ: Exit(A.as_obj = B.as_obj);
   end;
   Result := false;
 end;
