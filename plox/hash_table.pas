@@ -20,18 +20,21 @@ type
   THashTable = class
   private
     FCount: Integer;
-    FRealCount: Integer;
+    FTombstoneCount: Integer;
     FCapacity: Integer;
+
     FGrowThreshold: Integer;
     FShrinkThreshold: Integer;
+    FTombstoneThreshold: Integer;
+
     FProbeStep: Integer;
     FEntries: PTableEntry;
 
     FObjs: TObjectManager_SI;
 
-    procedure PurgeTombs();
+    procedure ClearTombstones();
     procedure NewCapacity(const new_capacity: Integer);
-    procedure AdjustCapacity();
+    procedure AdjustCapacity(const new_capacity: Integer);
     function findEntry(const key: PObjString): PTableEntry;
   public
     constructor Create(const aObjs: TObjectManager_SI);
@@ -39,6 +42,7 @@ type
 
     function tableGet(const key: PObjString; var V: TValue): Boolean;
     function tableSet(const key: PObjString; const V: TValue): Boolean;
+    function tableDelete(const key: PObjString): Boolean;
     procedure tableAddAll(const from: THashTable);
   end;
 
@@ -51,18 +55,61 @@ uses
 
 const
   entrySize = SizeOf(TTableEntry);
-  HT_MAX_LOAD = 0.8;
+
+  HT_MAX_LOAD = 0.7;
   HT_MIN_LOAD = 0.3;
   HT_MIN_CAPACITY = 10;
+
+  HT_TOMBSTONE_LOAD = 0.2;
   HT_SHRINK_FACTOR = 1.4;
+
   HT_PROBE_GROW_BASE = 32;
   HT_PROBE_GROW_FACTOR = 2;
 
 { THashTable }
 
-procedure THashTable.PurgeTombs();
+procedure THashTable.ClearTombstones();
+var
+  i, idx: Integer;
+  iter, dest: PTableEntry;
 begin
+  if (FCount - FTombstoneCount) < FShrinkThreshold then
+  begin
+    AdjustCapacity(Trunc((FCount - FTombstoneCount) * HT_SHRINK_FACTOR));
+    Exit; // size change = rehash = tombstone clear
+  end;
 
+  for i := 0 to FCapacity - 1 do
+  begin
+    iter := FEntries + i;
+    if iter^.key = nil then // empty or tombstone
+    begin
+      if not IS_NIL(iter^.value) then // tombstone
+      begin
+        iter^.value := NIL_VAL; // make it empty
+        Dec(FCount);
+        Dec(FTombstoneCount);
+      end;
+    end
+    else begin
+      idx := Integer(iter^.key^.hash) mod FCapacity;
+      while idx <> i do // entry not at desired place
+      begin
+        dest := FEntries + idx;
+        if dest^.key = nil then // desired position is empty
+        begin
+          dest^ := iter^;
+          iter^.key := nil;
+          Break;
+        end;
+        inc(idx, FProbeStep);
+      end;
+    end;
+  end;
+  {$ifdef DEBUG_HASH_TABLE}
+  if FTombstoneCount <> 0 then
+    printf('HT Error: TombstoneCount not zero after clear: %d <> 0',[FTombstoneCount], true);
+  {$endif}
 end;
 
 procedure THashTable.NewCapacity(const new_capacity: Integer);
@@ -79,37 +126,38 @@ begin
   end;
   if (FProbeStep and 1) = 1 then // probe step is odd, make odd capacity even
     inc(FCapacity);
+  // zeroing memory will set value type to VAL_NIL, which is defined as = 0
   FEntries := ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
   FGrowThreshold := Trunc(FCapacity * HT_MAX_LOAD);
+  FTombstoneThreshold := Trunc(FCapacity * HT_TOMBSTONE_LOAD);
   if FCapacity < HT_MIN_CAPACITY then
     FShrinkThreshold := 0
   else
     FShrinkThreshold := Trunc(FCapacity * HT_MIN_LOAD);
 end;
 
-procedure THashTable.AdjustCapacity();
+procedure THashTable.AdjustCapacity(const new_capacity: Integer);
 var
   old_capacity, i: Integer;
   old_list, source, dest: PTableEntry;
 begin
+  if new_capacity < 0 then
+  begin
+    {$ifdef DEBUG_HASH_TABLE}
+    printf('HT Error: AdjustCapacity called with negative size: %d < 0',[new_capacity], true);
+    {$endif}
+    Exit;
+  end;
   // NewCapacity will create new TableEntry array, so we must save old values before calling it
   old_capacity := FCapacity;
   old_list := FEntries;
-  if (FRealCount + 1) > FGrowThreshold then
-    NewCapacity(GROW_CAPACITY(old_capacity))
-  else if FRealCount < FShrinkThreshold then
-    NewCapacity(Trunc(FRealCount * HT_SHRINK_FACTOR))
-  else begin
-    // number of real entries is within bounds, but this routine was called
-    // this means that count of real entries + tombstones (FCount) exceeded grow threshold
-    // so instead of resizing the hash table, it may be faster to only purge tombstones
-    PurgeTombs();
-    Exit;
-  end;
+
+  NewCapacity(new_capacity);
 
   if old_list = nil then
     Exit;
 
+  FTombstoneCount := 0;
   FCount := 0;
   for i := 0 to old_capacity - 1 do
   begin
@@ -119,14 +167,6 @@ begin
     dest^ := source^;
     inc(FCount);
   end;
-  {$ifdef DEBUG_HASH_TABLE}
-  if FCount <> FRealCount then
-  begin
-    printf('ERROR: Count and real count mismatch after hash table resize: count=%d; real=%d; capacity=%d',
-      [FCount, FRealCount, FCapacity], true);
-    FRealCount := FCount;
-  end;
-  {$endif}
   FREE_ARRAY(old_list, old_capacity, entrySize);
 end;
 
@@ -136,11 +176,27 @@ var
   tombstone: PTableEntry;
 begin
   idx := Integer(key^.hash) mod FCapacity;
+  tombstone := nil;
   while true do
   begin
     Result := FEntries + idx;
-    if (Result^.key = key) or (Result^.key = nil) then
-      Exit;
+    if Result^.key = key then
+      Exit
+    else if Result^.key = nil then
+    begin
+      if IS_NIL(Result^.value) then
+      begin
+        // empty entry return tombstone if it's not nil
+        if tombstone <> nil then
+          Exit(tombstone);
+        Exit;
+      end
+      else begin
+        // found tombstone
+        if tombstone = nil then
+          tombstone := Result;
+      end;
+    end;
     idx := (idx + FProbeStep) mod FCapacity;
   end;
 end;
@@ -149,10 +205,11 @@ constructor THashTable.Create(const aObjs: TObjectManager_SI);
 begin
   FObjs := aObjs;
   FCount := 0;
-  FRealCount := 0;
   FCapacity := 0;
   FGrowThreshold := 0;
   FShrinkThreshold := 0;
+  FTombstoneCount := 0;
+  FTombstoneThreshold := 0;
   FProbeStep := 1;
   FEntries := nil;
 end;
@@ -182,18 +239,40 @@ function THashTable.tableSet(const key: PObjString; const V: TValue): Boolean;
 var
   entry: PTableEntry;
 begin
-  if FCount > FGrowThreshold then
-    AdjustCapacity();
+  if (FCount + 1) > FGrowThreshold then
+    AdjustCapacity(GROW_CAPACITY(FCapacity));
 
   entry := findEntry(key);
   Result := entry^.key = nil; // isNewKey
   if Result then
   begin
-    inc(FCount);
-    inc(FRealCount);
+    if IS_NIL(entry^.value) then
+      inc(FCount) // new entry is not a tombstone
+    else
+      dec(FTombstoneCount);
     entry^.key := key;
   end;
   entry^.value := V;
+end;
+
+function THashTable.tableDelete(const key: PObjString): Boolean;
+var
+  entry: PTableEntry;
+begin
+  if FCount = 0 then
+    Exit(false);
+
+  entry := findEntry(key);
+  if entry^.key = nil then
+    Exit(false);
+
+  // tombstone, an entry with key = nil, but value type not = VAL_NIL
+  entry^.key := nil;
+  entry^.value.type_ := VAL_Invalid;
+  inc(FTombstoneCount);
+  Result := True;
+  if FTombstoneCount > FTombstoneThreshold then
+    ClearTombstones();
 end;
 
 procedure THashTable.tableAddAll(const from: THashTable);
