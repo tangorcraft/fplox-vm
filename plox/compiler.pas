@@ -36,7 +36,7 @@ type
     PREC_PRIMARY
   );
 
-  TParseProc = procedure of object;
+  TParseProc = procedure(const canAssign: Boolean) of object;
   TParseRule = record
     prefix: TParseProc;
     infix: TParseProc;
@@ -60,20 +60,40 @@ type
     procedure errorAtCurrent(const msg: PChar);
     procedure advance();
     procedure consume(const type_: TokenType; const msg: PChar);
+    function check(const type_: TokenType): Boolean;
+    function match(const type_: TokenType): Boolean;
+    function makeConstant(const V: TValue): Integer;
     procedure emitByte(const B: Byte);
+    procedure emitLong(const B: Integer);
     procedure emitCode(const B: OpCode);
     procedure emitCodes(const B1, B2: OpCode);
+    procedure emitCodeByte(const B1: OpCode; const B2: Byte);
+    procedure emitCodeLong(const B1: OpCode; const B2: Integer);
+    procedure emitCodeVar(const B_short, B_long: OpCode; const B2: Integer);
     procedure emitReturn();
     procedure emitConstant(const V: TValue);
     procedure endCompiler();
     procedure parsePrecedense(const P: TPrecedence);
+    function identifierConstant(const name: TToken): Integer;
+    function parseVariable(const msg: PChar): Integer;
+    procedure defineVariable(const global: Integer);
     procedure expression();
-    procedure number();
-    procedure literal();
-    procedure string_();
-    procedure unary();
-    procedure binary();
-    procedure grouping();
+    procedure expressionStatement();
+    procedure printStatement();
+    procedure statement();
+    procedure varDeclaration();
+    procedure declaration();
+    procedure synchronize();
+    procedure namedVariable(const name: TToken; const canAssign: Boolean);
+
+    procedure number(const canAssign: Boolean);
+    procedure literal(const canAssign: Boolean);
+    procedure string_(const canAssign: Boolean);
+    procedure variable(const canAssign: Boolean);
+    procedure unary(const canAssign: Boolean);
+    procedure binary(const canAssign: Boolean);
+    procedure grouping(const canAssign: Boolean);
+
     function compile_(const source: string; var C: TChunk): Boolean;
   end;
 
@@ -118,7 +138,7 @@ begin
   init_rule(TOKEN_GREATER_EQUAL, nil      , @binary, PREC_COMPARISON);
   init_rule(TOKEN_LESS         , nil      , @binary, PREC_COMPARISON);
   init_rule(TOKEN_LESS_EQUAL   , nil      , @binary, PREC_COMPARISON);
-  init_rule(TOKEN_IDENTIFIER   , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_IDENTIFIER   , @variable, nil    , PREC_NONE);
   init_rule(TOKEN_STRING       , @string_ , nil    , PREC_NONE);
   init_rule(TOKEN_NUMBER       , @number  , nil    , PREC_NONE);
   init_rule(TOKEN_AND          , nil      , nil    , PREC_NONE);
@@ -196,9 +216,32 @@ begin
   errorAtCurrent(msg);
 end;
 
+function TCompiler.check(const type_: TokenType): Boolean;
+begin
+  Result := parser.current.type_ = type_;
+end;
+
+function TCompiler.match(const type_: TokenType): Boolean;
+begin
+  if not check(type_) then
+    Exit(false);
+  advance();
+  Result := True;
+end;
+
+function TCompiler.makeConstant(const V: TValue): Integer;
+begin
+  Result := currentChunk().addConstant(V);
+end;
+
 procedure TCompiler.emitByte(const B: Byte);
 begin
   currentChunk().write(B, parser.previous.line);
+end;
+
+procedure TCompiler.emitLong(const B: Integer);
+begin
+  currentChunk().write24(B, parser.previous.line);
 end;
 
 procedure TCompiler.emitCode(const B: OpCode);
@@ -210,6 +253,26 @@ procedure TCompiler.emitCodes(const B1, B2: OpCode);
 begin
   emitByte(ord(B1));
   emitByte(ord(B2));
+end;
+
+procedure TCompiler.emitCodeByte(const B1: OpCode; const B2: Byte);
+begin
+  emitByte(ord(B1));
+  emitByte(B2);
+end;
+
+procedure TCompiler.emitCodeLong(const B1: OpCode; const B2: Integer);
+begin
+  emitByte(ord(B1));
+  emitLong(B2);
+end;
+
+procedure TCompiler.emitCodeVar(const B_short, B_long: OpCode; const B2: Integer);
+begin
+  if B2 > $ff then
+    emitCodeLong(B_long, B2)
+  else
+    emitCodeByte(B_short, Byte(B2));
 end;
 
 procedure TCompiler.emitReturn();
@@ -230,6 +293,7 @@ end;
 procedure TCompiler.parsePrecedense(const P: TPrecedence);
 var
   ruleProc: TParseProc;
+  canAssign: Boolean;
 begin
   advance();
   ruleProc := parseRules[parser.previous.type_].prefix;
@@ -239,7 +303,8 @@ begin
     Exit;
   end;
 
-  ruleProc();
+  canAssign := P <= PREC_ASSIGNMENT;
+  ruleProc(canAssign);
 
   while (P <= parseRules[parser.current.type_].precedence) do
   begin
@@ -250,8 +315,27 @@ begin
       error('Operation not allowed');
       Exit;
     end;
-    ruleProc();
+    ruleProc(canAssign);
   end;
+
+  if canAssign and match(TOKEN_EQUAL) then
+    error('Invalid assignment target.');
+end;
+
+function TCompiler.identifierConstant(const name: TToken): Integer;
+begin
+  Result := makeConstant(OBJ_VAL(currentChunk().objs.copyString(name.start, name.length)));
+end;
+
+function TCompiler.parseVariable(const msg: PChar): Integer;
+begin
+  consume(TOKEN_IDENTIFIER, msg);
+  Result := identifierConstant(parser.previous);
+end;
+
+procedure TCompiler.defineVariable(const global: Integer);
+begin
+  emitCodeVar(OP_DEFINE_GLOBAL, OP_DEFINE_GLOBAL_LONG, global);
 end;
 
 procedure TCompiler.expression();
@@ -259,7 +343,78 @@ begin
   parsePrecedense(PREC_ASSIGNMENT);
 end;
 
-procedure TCompiler.number();
+procedure TCompiler.expressionStatement();
+begin
+  expression();
+  consume(TOKEN_SEMICOLON, 'Expect ";" after expression.');
+  emitCode(OP_POP);
+end;
+
+procedure TCompiler.printStatement();
+begin
+  expression();
+  consume(TOKEN_SEMICOLON, 'Expect ";" after value.');
+  emitCode(OP_PRINT);
+end;
+
+procedure TCompiler.statement();
+begin
+  if match(TOKEN_PRINT) then
+    printStatement()
+  else
+    expressionStatement();
+end;
+
+procedure TCompiler.varDeclaration();
+var
+  global: Integer;
+begin
+  global := parseVariable('Expect variable name.');
+
+  if match(TOKEN_EQUAL) then
+    expression()
+  else
+    emitCode(OP_NIL);
+  consume(TOKEN_SEMICOLON, 'Expect ";" after variable declaration.');
+
+  defineVariable(global);
+end;
+
+procedure TCompiler.declaration();
+begin
+  if match(TOKEN_VAR) then
+    varDeclaration()
+  else
+    statement();
+
+  if parser.panicMode then
+    synchronize();
+end;
+
+procedure TCompiler.synchronize();
+begin
+  parser.panicMode := False;
+
+  while parser.current.type_ <> TOKEN_EOF do
+  begin
+    if parser.previous.type_ = TOKEN_SEMICOLON then
+      Exit;
+    case parser.current.type_ of
+      TOKEN_CLASS,
+      TOKEN_FUN,
+      TOKEN_VAR,
+      TOKEN_FOR,
+      TOKEN_IF,
+      TOKEN_WHILE,
+      TOKEN_PRINT,
+      TOKEN_RETURN:
+        Exit;
+    end;
+    advance();
+  end;
+end;
+
+procedure TCompiler.number(const canAssign: Boolean);
 var
   value: double;
 begin
@@ -267,7 +422,7 @@ begin
   emitConstant(NUMBER_VAL(value));
 end;
 
-procedure TCompiler.literal();
+procedure TCompiler.literal(const canAssign: Boolean);
 begin
   case parser.previous.type_ of
     TOKEN_FALSE: emitCode(OP_FALSE);
@@ -276,12 +431,32 @@ begin
   end;
 end;
 
-procedure TCompiler.string_();
+procedure TCompiler.string_(const canAssign: Boolean);
 begin
   emitConstant(OBJ_VAL(currentChunk().objs.copyString(parser.previous.start + 1, parser.previous.length - 2)));
 end;
 
-procedure TCompiler.unary();
+procedure TCompiler.namedVariable(const name: TToken; const canAssign: Boolean);
+var
+  arg: Integer;
+begin
+  arg := identifierConstant(name);
+
+  if canAssign and match(TOKEN_EQUAL) then
+  begin
+    expression();
+    emitCodeVar(OP_SET_GLOBAL, OP_SET_GLOBAL_LONG, arg);
+  end
+  else
+    emitCodeVar(OP_GET_GLOBAL, OP_GET_GLOBAL_LONG, arg);
+end;
+
+procedure TCompiler.variable(const canAssign: Boolean);
+begin
+  namedVariable(parser.previous, canAssign);
+end;
+
+procedure TCompiler.unary(const canAssign: Boolean);
 var
   oper_type: TokenType;
 begin
@@ -295,7 +470,7 @@ begin
   end;
 end;
 
-procedure TCompiler.binary();
+procedure TCompiler.binary(const canAssign: Boolean);
 var
   oper_type: TokenType;
 begin
@@ -316,7 +491,7 @@ begin
   end;
 end;
 
-procedure TCompiler.grouping();
+procedure TCompiler.grouping(const canAssign: Boolean);
 begin
   expression();
   consume(TOKEN_RIGHT_PAREN, 'Expect ")" after expression.');
@@ -331,8 +506,8 @@ begin
   scanner := TLoxScanner.Create(source);
   try
     advance();
-    expression();
-    consume(TOKEN_EOF, 'Expect end of expression.');
+    while not match(TOKEN_EOF) do
+      declaration();
   finally
     scanner.Free;
   end;

@@ -41,7 +41,8 @@ type
     destructor Destroy; override;
 
     function tableGet(const key: PObjString; var V: TValue): Boolean;
-    function tableSet(const key: PObjString; const V: TValue): Boolean;
+    function tableSet(const key: PObjString; const V: TValue;
+      const mustExist: Boolean = false): Boolean;
     function tableDelete(const key: PObjString): Boolean;
     procedure tableAddAll(const from: THashTable);
   end;
@@ -98,8 +99,14 @@ begin
         dest := FEntries + idx;
         if dest^.key = nil then // desired position is empty
         begin
+          if not IS_NIL(dest^.value) then // tombstone
+          begin
+            Dec(FCount);
+            Dec(FTombstoneCount);
+          end;
           dest^ := iter^;
           iter^.key := nil;
+          iter^.value := NIL_VAL;
           Break;
         end;
         inc(idx, FProbeStep);
@@ -141,10 +148,10 @@ var
   old_capacity, i: Integer;
   old_list, source, dest: PTableEntry;
 begin
-  if new_capacity < 0 then
+  if new_capacity <= 0 then
   begin
     {$ifdef DEBUG_HASH_TABLE}
-    printf('HT Error: AdjustCapacity called with negative size: %d < 0',[new_capacity], true);
+    printf('HT Error: AdjustCapacity called with invalid size: %d <= 0',[new_capacity], true);
     {$endif}
     Exit;
   end;
@@ -235,7 +242,8 @@ begin
   Result := True;
 end;
 
-function THashTable.tableSet(const key: PObjString; const V: TValue): Boolean;
+function THashTable.tableSet(const key: PObjString; const V: TValue;
+  const mustExist: Boolean): Boolean;
 var
   entry: PTableEntry;
 begin
@@ -246,6 +254,10 @@ begin
   Result := entry^.key = nil; // isNewKey
   if Result then
   begin
+    // if mustExist and key is new we return True, but no actual assigment happens
+    // maybe I should change the meaning of this function return value
+    if mustExist then
+      Exit;
     if IS_NIL(entry^.value) then
       inc(FCount) // new entry is not a tombstone
     else

@@ -8,7 +8,7 @@ interface
 uses
   Classes, SysUtils, compiler,
   {$ifdef DEBUG_TRACE_EXECUTION}debug,{$endif}
-  chunk, hash_set, object_, value, memory, common;
+  chunk, hash_table, hash_set, object_, value, memory, common;
 
 const
   MAX_STACK = 1024;
@@ -30,6 +30,7 @@ type
     stack: array[0..MAX_STACK] of TValue;
     stackTop: PValue;
     objs: TObjectManager_SI;
+    globals: THashTable;
 
     procedure resetStack;
     procedure push(const V: TValue);
@@ -86,10 +87,12 @@ constructor TLoxVM.Create;
 begin
   resetStack;
   objs := TObjectManager_SI.Create;
+  globals := THashTable.Create(objs);
 end;
 
 destructor TLoxVM.Destroy;
 begin
+  globals.Free;
   objs.Free;
   inherited Destroy;
 end;
@@ -114,6 +117,7 @@ var
   instruction: OpCode;
   valA, valB: TValue;
   pval: PValue;
+  name: PObjString;
 
   function READ_BYTE: Byte;
   begin
@@ -208,17 +212,63 @@ begin
       OP_HALT:
         Exit(INTERPRET_HALT);
       OP_RETURN: begin
+        Exit(INTERPRET_OK);
+      end;
+      OP_PRINT: begin
         printValue(pop());
         print(NL);
-        Exit(INTERPRET_OK);
       end;
       OP_CONSTANT: begin
         valA := READ_CONSTANT;
         push(valA);
       end;
+      OP_CONSTANT_LONG: begin
+        valA := READ_CONSTANT_LONG;
+        push(valA);
+      end;
       OP_NIL: push(NIL_VAL);
       OP_TRUE: push(BOOL_VAL(true));
       OP_FALSE: push(BOOL_VAL(false));
+      OP_POP: pop();
+      OP_SET_GLOBAL,
+      OP_SET_GLOBAL_LONG: begin
+        if instruction = OP_SET_GLOBAL then
+          name := AS_STRING(READ_CONSTANT)
+        else
+          name := AS_STRING(READ_CONSTANT_LONG);
+        // tableSet return True if key is new, i.e. don't exist in hash table
+        // no value is set then if mustExist is also True
+        if globals.tableSet(name, peek(0)^, true) then
+        begin
+          // so no need for deletion
+          // but is it faster this way?
+          runtimeError('Undefined variable "%s".',[name^.chars]);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+      end;
+      OP_GET_GLOBAL,
+      OP_GET_GLOBAL_LONG: begin
+        if instruction = OP_GET_GLOBAL then
+          name := AS_STRING(READ_CONSTANT)
+        else
+          name := AS_STRING(READ_CONSTANT_LONG);
+        if not globals.tableGet(name, valA) then
+        begin
+          runtimeError('Undefined variable "%s".',[name^.chars]);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+        push(valA);
+      end;
+      OP_DEFINE_GLOBAL: begin
+        name := AS_STRING(READ_CONSTANT);
+        globals.tableSet(name, peek(0)^);
+        pop();
+      end;
+      OP_DEFINE_GLOBAL_LONG: begin
+        name := AS_STRING(READ_CONSTANT_LONG);
+        globals.tableSet(name, peek(0)^);
+        pop();
+      end;
       OP_NOT:
         push(BOOL_VAL(isFalsey(pop())));
       OP_NEGATE: begin

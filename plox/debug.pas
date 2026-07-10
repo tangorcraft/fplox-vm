@@ -80,6 +80,7 @@ begin
   instruction := OpCode(C.code[offset]);
   case (instruction) of
     OP_HALT,
+    OP_PRINT,
     OP_RETURN:
       Result := simpleIntsruction(instruction, offset);
     OP_CONSTANT:
@@ -89,6 +90,20 @@ begin
     OP_NIL,
     OP_TRUE,
     OP_FALSE,
+    OP_POP:
+      Result := simpleIntsruction(instruction, offset);
+    OP_SET_GLOBAL:
+      Result := constantIntsruction('OP_SET_GLOBAL', C, offset);
+    OP_SET_GLOBAL_LONG:
+      Result := constantLongIntsruction('OP_SET_GLOBAL_LONG', C, offset);
+    OP_GET_GLOBAL:
+      Result := constantIntsruction('OP_GET_GLOBAL', C, offset);
+    OP_GET_GLOBAL_LONG:
+      Result := constantLongIntsruction('OP_GET_GLOBAL_LONG', C, offset);
+    OP_DEFINE_GLOBAL:
+      Result := constantIntsruction('OP_DEFINE_GLOBAL', C, offset);
+    OP_DEFINE_GLOBAL_LONG:
+      Result := constantLongIntsruction('OP_DEFINE_GLOBAL_LONG', C, offset);
     OP_NOT,
     OP_NEGATE,
     OP_EQUAL,
