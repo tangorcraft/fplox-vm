@@ -19,6 +19,8 @@ type
     OP_TRUE,
     OP_FALSE,
     OP_POP,
+    OP_SET_LOCAL,
+    OP_GET_LOCAL,
     OP_SET_GLOBAL,
     OP_SET_GLOBAL_LONG,
     OP_GET_GLOBAL,

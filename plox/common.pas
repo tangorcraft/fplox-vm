@@ -18,6 +18,8 @@ var
 const
   NL = #13; // new line
   NaN = Math.NaN;
+  UINT8_MAX = high(UInt8);
+  UINT8_COUNT = UINT8_MAX + 1;
 
 procedure print(S: string; const err: Boolean = false);
 procedure printf(const Fmt: string; vars: array of const; const err: Boolean = false);

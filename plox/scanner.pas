@@ -53,7 +53,16 @@ type
     function scanToken(): TToken;
   end;
 
+function identifiersEqual(const A, B: TToken): Boolean;
+
 implementation
+
+function identifiersEqual(const A, B: TToken): Boolean;
+begin
+  if a.length <> b.length then
+    Exit(False);
+  Result := memcmp(a.start, b.start, a.length);
+end;
 
 { TLoxScanner }
 

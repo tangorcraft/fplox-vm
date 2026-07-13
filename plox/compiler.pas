@@ -44,6 +44,19 @@ type
   end;
   PParseRule = ^TParseRule;
 
+  TLocal = record
+    name: TToken;
+    depth: Integer;
+  end;
+  PLocal = ^TLocal;
+
+  TCompilerState = record
+    locals: array[Byte] of TLocal;
+    localCount: Integer;
+    scopeDepth: Integer;
+  end;
+  PCompilerState = ^TCompilerState;
+
   { TCompiler }
 
   TCompiler = class
@@ -51,6 +64,9 @@ type
     parser: TParser;
     compilingChunk: TChunk;
     parseRules: array[TokenType] of TParseRule;
+    current: PCompilerState;
+
+    procedure initCompiler(const state: PCompilerState);
 
     constructor Create;
 
@@ -75,9 +91,14 @@ type
     procedure endCompiler();
     procedure parsePrecedense(const P: TPrecedence);
     function identifierConstant(const name: TToken): Integer;
+    procedure addLocal(const name: TToken);
+    procedure declareVariable();
     function parseVariable(const msg: PChar): Integer;
     procedure defineVariable(const global: Integer);
     procedure expression();
+    procedure beginScope();
+    procedure endScope();
+    procedure block();
     procedure expressionStatement();
     procedure printStatement();
     procedure statement();
@@ -108,6 +129,13 @@ begin
 end;
 
 { TCompiler }
+
+procedure TCompiler.initCompiler(const state: PCompilerState);
+begin
+  state^.localCount := 0;
+  state^.scopeDepth := 0;
+  current := state;
+end;
 
 constructor TCompiler.Create;
 
@@ -327,20 +355,91 @@ begin
   Result := makeConstant(OBJ_VAL(currentChunk().objs.copyString(name.start, name.length)));
 end;
 
+procedure TCompiler.addLocal(const name: TToken);
+var
+  local: PLocal;
+begin
+  if current^.localCount = UINT8_COUNT then
+  begin
+    error('Too many local variables in function.');
+    Exit;
+  end;
+
+  local := @current^.locals[current^.localCount];
+  inc(current^.localCount);
+  local^.name := name;
+  local^.depth := current^.scopeDepth;
+end;
+
+procedure TCompiler.declareVariable();
+var
+  local: PLocal;
+  i: Integer;
+begin
+  if current^.scopeDepth = 0 then
+    Exit;
+
+  //name := @parser.previous;
+  for i := current^.localCount - 1 downto 0 do
+  begin
+    local := @current^.locals[i];
+    if (local^.depth <> -1) and (local^.depth < current^.scopeDepth) then
+      Break;
+
+    if identifiersEqual(parser.previous, local^.name) then
+      error('Already a variable with this name in this scope.');
+  end;
+  //addLocal(name^);
+  addLocal(parser.previous);
+end;
+
 function TCompiler.parseVariable(const msg: PChar): Integer;
 begin
   consume(TOKEN_IDENTIFIER, msg);
+
+  declareVariable();
+  if current^.scopeDepth > 0 then
+    Exit(0);
+
   Result := identifierConstant(parser.previous);
 end;
 
 procedure TCompiler.defineVariable(const global: Integer);
 begin
+  if current^.scopeDepth > 0 then
+    Exit;
+
   emitCodeVar(OP_DEFINE_GLOBAL, OP_DEFINE_GLOBAL_LONG, global);
 end;
 
 procedure TCompiler.expression();
 begin
   parsePrecedense(PREC_ASSIGNMENT);
+end;
+
+procedure TCompiler.beginScope();
+begin
+  inc(current^.scopeDepth);
+end;
+
+procedure TCompiler.endScope();
+begin
+  dec(current^.scopeDepth);
+
+  while (current^.localCount > 0) and
+        (current^.locals[current^.localCount - 1].depth > current^.scopeDepth)
+  do begin
+    emitCode(OP_POP);
+    dec(current^.localCount);
+  end;
+end;
+
+procedure TCompiler.block();
+begin
+  while (not check(TOKEN_RIGHT_BRACE)) and (not check(TOKEN_EOF)) do
+    declaration();
+
+  consume(TOKEN_RIGHT_BRACE, 'Expect "}" after block.');
 end;
 
 procedure TCompiler.expressionStatement();
@@ -361,6 +460,12 @@ procedure TCompiler.statement();
 begin
   if match(TOKEN_PRINT) then
     printStatement()
+  else if match(TOKEN_LEFT_BRACE) then
+  begin
+    beginScope();
+    block();
+    endScope();
+  end
   else
     expressionStatement();
 end;
@@ -439,16 +544,30 @@ end;
 procedure TCompiler.namedVariable(const name: TToken; const canAssign: Boolean);
 var
   arg: Integer;
+  getOp, setOp: OpCode;
 begin
-  arg := identifierConstant(name);
+  arg := resolveLocal(current, name);
+  if arg <> -1 then
+  begin
+    getOp := OP_GET_LOCAL;
+    setOp := OP_SET_LOCAL;
+  end
+  else
+  begin
+    arg := identifierConstant(name);
+    getOp := OP_GET_GLOBAL;
+    setOp := OP_SET_GLOBAL;
+  end;
 
+  // arg from resolveLocal will never exceed UInt8 range
+  // so LONG part of the emit code should never execute for local variables
   if canAssign and match(TOKEN_EQUAL) then
   begin
     expression();
-    emitCodeVar(OP_SET_GLOBAL, OP_SET_GLOBAL_LONG, arg);
+    emitCodeVar(setOp, OP_SET_GLOBAL_LONG, arg);
   end
   else
-    emitCodeVar(OP_GET_GLOBAL, OP_GET_GLOBAL_LONG, arg);
+    emitCodeVar(getOp, OP_GET_GLOBAL_LONG, arg);
 end;
 
 procedure TCompiler.variable(const canAssign: Boolean);
@@ -498,10 +617,13 @@ begin
 end;
 
 function TCompiler.compile_(const source: string; var C: TChunk): Boolean;
+var
+  state: TCompilerState;
 begin
   parser.hadError := false;
   parser.panicMode := false;
 
+  initCompiler(@state);
   compilingChunk := C;
   scanner := TLoxScanner.Create(source);
   try
