@@ -119,6 +119,7 @@ var
   pval: PValue;
   name: PObjString;
   slot: Byte;
+  offset: Word;
 
   function READ_BYTE: Byte;
   begin
@@ -130,6 +131,12 @@ var
   begin
     Result := OpCode(ip^);
     Inc(ip);
+  end;
+
+  function READ_SHORT: Word;
+  begin
+    Result := (ip[0] shl 8) or ip[1];
+    Inc(ip, 2);
   end;
 
   function READ_CONSTANT: TValue;
@@ -212,12 +219,30 @@ begin
     case instruction of
       OP_HALT:
         Exit(INTERPRET_HALT);
-      OP_RETURN: begin
-        Exit(INTERPRET_OK);
-      end;
       OP_PRINT: begin
         printValue(pop());
         print(NL);
+      end;
+      OP_JUMP: begin
+        offset := READ_SHORT();
+        inc(ip, offset);
+      end;
+      OP_JUMP_IF_FALSE: begin
+        offset := READ_SHORT();
+        if isFalsey(peek(0)^) then
+          inc(ip, offset);
+      end;
+      OP_JUMP_IF_FALSE_POP: begin
+        offset := READ_SHORT();
+        if isFalsey(pop()) then
+          inc(ip, offset);
+      end;
+      OP_LOOP: begin
+        offset := READ_SHORT;
+        Dec(ip, offset);
+      end;
+      OP_RETURN: begin
+        Exit(INTERPRET_OK);
       end;
       OP_CONSTANT: begin
         valA := READ_CONSTANT;

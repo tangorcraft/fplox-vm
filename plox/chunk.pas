@@ -12,6 +12,10 @@ type
   OpCode = (
     OP_HALT,
     OP_PRINT,
+    OP_JUMP,
+    OP_JUMP_IF_FALSE,
+    OP_JUMP_IF_FALSE_POP,
+    OP_LOOP,
     OP_RETURN,
     OP_CONSTANT,
     OP_CONSTANT_LONG,

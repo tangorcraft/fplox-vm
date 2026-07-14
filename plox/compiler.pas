@@ -79,6 +79,7 @@ type
     function check(const type_: TokenType): Boolean;
     function match(const type_: TokenType): Boolean;
     function makeConstant(const V: TValue): Integer;
+
     procedure emitByte(const B: Byte);
     procedure emitLong(const B: Integer);
     procedure emitCode(const B: OpCode);
@@ -88,7 +89,11 @@ type
     procedure emitCodeVar(const B_short, B_long: OpCode; const B2: Integer);
     procedure emitReturn();
     procedure emitConstant(const V: TValue);
+    function emitJump(const B: OpCode): Integer;
+    procedure patchJump(const offset: Integer);
+    procedure emitLoop(const loopStart: integer);
     procedure endCompiler();
+
     procedure parsePrecedense(const P: TPrecedence);
     function identifierConstant(const name: TToken): Integer;
     procedure addLocal(const name: TToken);
@@ -104,6 +109,9 @@ type
     procedure block();
     procedure expressionStatement();
     procedure printStatement();
+    procedure ifStatement();
+    procedure whileStatement();
+    procedure forStatement();
     procedure statement();
     procedure varDeclaration();
     procedure declaration();
@@ -116,6 +124,9 @@ type
     procedure unary(const canAssign: Boolean);
     procedure binary(const canAssign: Boolean);
     procedure grouping(const canAssign: Boolean);
+
+    procedure and_(const canAssign: Boolean);
+    procedure or_(const canAssign: Boolean);
 
     function compile_(const source: string; var C: TChunk): Boolean;
   end;
@@ -171,7 +182,7 @@ begin
   init_rule(TOKEN_IDENTIFIER   , @variable, nil    , PREC_NONE);
   init_rule(TOKEN_STRING       , @string_ , nil    , PREC_NONE);
   init_rule(TOKEN_NUMBER       , @number  , nil    , PREC_NONE);
-  init_rule(TOKEN_AND          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_AND          , nil      , @and_  , PREC_AND);
   init_rule(TOKEN_CLASS        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_ELSE         , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_FALSE        , @literal , nil    , PREC_NONE);
@@ -179,7 +190,7 @@ begin
   init_rule(TOKEN_FUN          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_IF           , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_NIL          , @literal , nil    , PREC_NONE);
-  init_rule(TOKEN_OR           , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_OR           , nil      , @or_   , PREC_OR);
   init_rule(TOKEN_PRINT        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_RETURN       , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_SUPER        , nil      , nil    , PREC_NONE);
@@ -313,6 +324,42 @@ end;
 procedure TCompiler.emitConstant(const V: TValue);
 begin
   currentChunk().writeConstant(V, parser.previous.line);
+end;
+
+function TCompiler.emitJump(const B: OpCode): Integer;
+begin
+  emitCode(B);
+  emitByte($FF);
+  emitByte($FF);
+  Result := currentChunk().count - 2;
+end;
+
+procedure TCompiler.patchJump(const offset: Integer);
+var
+  jump: Integer;
+begin
+  // -2 to adjust for the bytecode for the jump offset itself.
+  jump := currentChunk().count - offset - 2;
+
+  if jump > high(UInt16) then
+    error('Too much code to jump over.');
+
+  currentChunk().code[offset] := (jump shr 8) and $FF;
+  currentChunk().code[offset + 1] := jump and $FF;
+end;
+
+procedure TCompiler.emitLoop(const loopStart: integer);
+var
+  offset: integer;
+begin
+  emitCode(OP_LOOP);
+
+  offset := currentChunk().count - loopStart +  2;
+  if offset > high(UInt16) then
+    error('Loop body too large.');
+
+  emitByte((offset shr 8) and $ff);
+  emitByte(offset and $ff);
 end;
 
 procedure TCompiler.endCompiler();
@@ -515,10 +562,106 @@ begin
   emitCode(OP_PRINT);
 end;
 
+procedure TCompiler.ifStatement();
+var
+  thenJump, elseJump: Integer;
+begin
+  consume(TOKEN_LEFT_PAREN, 'Expect "(" after "if".');
+  expression();
+  consume(TOKEN_RIGHT_PAREN, 'Expect ")" after condition.');
+
+  thenJump := emitJump(OP_JUMP_IF_FALSE);
+  emitCode(OP_POP);
+  statement();
+
+  elseJump := emitJump(OP_JUMP);
+
+  patchJump(thenJump);
+  emitCode(OP_POP);
+
+  if match(TOKEN_ELSE) then
+    statement();
+  patchJump(elseJump);
+end;
+
+procedure TCompiler.whileStatement();
+var
+  exitJump, loopStart: integer;
+begin
+  loopStart := currentChunk().count;
+  consume(TOKEN_LEFT_PAREN, 'Expect "(" after "while".');
+  expression();
+  consume(TOKEN_RIGHT_PAREN, 'Expect ")" after condition.');
+
+  exitJump := emitJump(OP_JUMP_IF_FALSE);
+  emitCode(OP_POP);
+  statement();
+  emitLoop(loopStart);
+
+  patchJump(exitJump);
+  emitCode(OP_POP);
+end;
+
+procedure TCompiler.forStatement();
+var
+  loopStart, exitJump, bodyJump,
+  incrementStart: Integer;
+begin
+  beginScope();
+  consume(TOKEN_LEFT_PAREN, 'Expect "(" after "for".');
+  if match(TOKEN_SEMICOLON) then
+    begin {No initializer.} end
+  else if match(TOKEN_VAR) then
+    varDeclaration()
+  else
+    expressionStatement();
+
+  loopStart := currentChunk().count;
+  exitJump := -1;
+  if not match(TOKEN_SEMICOLON) then
+  begin
+    expression();
+    consume(TOKEN_SEMICOLON, 'Expect ";" after loop condition.');
+
+    exitJump := emitJump(OP_JUMP_IF_FALSE);
+    emitCode(OP_POP);
+  end;
+
+  if not match(TOKEN_RIGHT_PAREN) then
+  begin
+    bodyJump := emitJump(OP_JUMP);
+    incrementStart := currentChunk().count;
+    expression();
+    emitCode(OP_POP);
+    consume(TOKEN_RIGHT_PAREN, 'Expect ")" after for clauses.');
+
+    emitLoop(loopStart);
+    loopStart := incrementStart;
+    patchJump(bodyJump);
+  end;
+
+  statement();
+  emitLoop(loopStart);
+
+  if exitJump <> -1 then
+  begin
+    patchJump(exitJump);
+    emitCode(OP_POP);
+  end;
+
+  endScope();
+end;
+
 procedure TCompiler.statement();
 begin
   if match(TOKEN_PRINT) then
     printStatement()
+  else if match(TOKEN_FOR) then
+    forStatement()
+  else if match(TOKEN_IF) then
+    ifStatement()
+  else if match(TOKEN_WHILE) then
+    whileStatement()
   else if match(TOKEN_LEFT_BRACE) then
   begin
     beginScope();
@@ -644,6 +787,32 @@ procedure TCompiler.grouping(const canAssign: Boolean);
 begin
   expression();
   consume(TOKEN_RIGHT_PAREN, 'Expect ")" after expression.');
+end;
+
+procedure TCompiler.and_(const canAssign: Boolean);
+var
+  endJump: Integer;
+begin
+  endJump := emitJump(OP_JUMP_IF_FALSE);
+
+  emitCode(OP_POP);
+  parsePrecedense(PREC_AND);
+
+  patchJump(endJump);
+end;
+
+procedure TCompiler.or_(const canAssign: Boolean);
+var
+  elseJump, endJump: Integer;
+begin
+  elseJump := emitJump(OP_JUMP_IF_FALSE);
+  endJump := emitJump(OP_JUMP);
+
+  patchJump(elseJump);
+  emitCode(OP_POP);
+
+  parsePrecedense(PREC_OR);
+  patchJump(endJump);
 end;
 
 function TCompiler.compile_(const source: string; var C: TChunk): Boolean;

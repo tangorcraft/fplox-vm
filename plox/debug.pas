@@ -39,6 +39,18 @@ begin
   Result := offset + 2;
 end;
 
+function jumpIntsruction(const op: OpCode; const sign: Integer; const C: TChunk;
+  const offset: integer): integer;
+var
+  jump: word;
+  name: string;
+begin
+  Str(op, name);
+  jump := Word(C.code[offset + 1]) shl 8;
+  jump := jump or C.code[offset + 2];
+  printf('%-16s %4d -> %d'+NL, [name, offset, offset + 3 + sign * jump]);
+  Result := offset + 3;
+end;
 
 procedure print_constant(const name: string; const constant: integer; const V: TValue);
 begin
@@ -125,6 +137,12 @@ begin
     OP_SET_LOCAL,
     OP_GET_LOCAL:
       Result := byteIntsruction(instruction, C, offset);
+    OP_JUMP,
+    OP_JUMP_IF_FALSE,
+    OP_JUMP_IF_FALSE_POP:
+      Result := jumpIntsruction(instruction, 1, C, offset);
+    OP_LOOP:
+      Result := jumpIntsruction(instruction, -1, C, offset);
 
   else
     begin
