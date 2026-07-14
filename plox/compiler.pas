@@ -92,6 +92,7 @@ type
     procedure parsePrecedense(const P: TPrecedence);
     function identifierConstant(const name: TToken): Integer;
     procedure addLocal(const name: TToken);
+    procedure markInitialized();
     procedure declareVariable();
     function parseVariable(const msg: PChar): Integer;
     procedure defineVariable(const global: Integer);
@@ -369,7 +370,12 @@ begin
   local := @current^.locals[current^.localCount];
   inc(current^.localCount);
   local^.name := name;
-  local^.depth := current^.scopeDepth;
+  local^.depth := -1;
+end;
+
+procedure TCompiler.markInitialized();
+begin
+  current^.locals[current^.localCount - 1].depth := current^.scopeDepth;
 end;
 
 procedure TCompiler.declareVariable();
@@ -408,7 +414,10 @@ end;
 procedure TCompiler.defineVariable(const global: Integer);
 begin
   if current^.scopeDepth > 0 then
+  begin
+    markInitialized();
     Exit;
+  end;
 
   emitCodeVar(OP_DEFINE_GLOBAL, OP_DEFINE_GLOBAL_LONG, global);
 end;
@@ -422,7 +431,11 @@ begin
   begin
     local := @compiler^.locals[i];
     if identifiersEqual(name, local^.name) then
+    begin
+      if local^.depth = -1 then
+        error('Can''t read local variable in its own initializer.');
       Exit(i);
+    end;
   end;
 
   Result := -1;
