@@ -95,6 +95,8 @@ type
     procedure declareVariable();
     function parseVariable(const msg: PChar): Integer;
     procedure defineVariable(const global: Integer);
+    function resolveLocal(const compiler: PCompilerState; const name: TToken): integer;
+    procedure namedVariable(const name: TToken; const canAssign: Boolean);
     procedure expression();
     procedure beginScope();
     procedure endScope();
@@ -105,7 +107,6 @@ type
     procedure varDeclaration();
     procedure declaration();
     procedure synchronize();
-    procedure namedVariable(const name: TToken; const canAssign: Boolean);
 
     procedure number(const canAssign: Boolean);
     procedure literal(const canAssign: Boolean);
@@ -412,6 +413,51 @@ begin
   emitCodeVar(OP_DEFINE_GLOBAL, OP_DEFINE_GLOBAL_LONG, global);
 end;
 
+function TCompiler.resolveLocal(const compiler: PCompilerState; const name: TToken): integer;
+var
+  i: Integer;
+  local: PLocal;
+begin
+  for i := compiler^.localCount - 1 downto 0 do
+  begin
+    local := @compiler^.locals[i];
+    if identifiersEqual(name, local^.name) then
+      Exit(i);
+  end;
+
+  Result := -1;
+end;
+
+procedure TCompiler.namedVariable(const name: TToken; const canAssign: Boolean);
+var
+  arg: Integer;
+  getOp, setOp: OpCode;
+begin
+  arg := resolveLocal(current, name);
+  if arg <> -1 then
+  begin
+    getOp := OP_GET_LOCAL;
+    setOp := OP_SET_LOCAL;
+  end
+  else
+  begin
+    arg := identifierConstant(name);
+    getOp := OP_GET_GLOBAL;
+    setOp := OP_SET_GLOBAL;
+  end;
+
+  // arg from resolveLocal will never exceed UInt8 range
+  // so LONG part of the emit code should never execute for local variables
+  if canAssign and match(TOKEN_EQUAL) then
+  begin
+    expression();
+    emitCodeVar(setOp, OP_SET_GLOBAL_LONG, arg);
+  end
+  else
+    emitCodeVar(getOp, OP_GET_GLOBAL_LONG, arg);
+end;
+
+
 procedure TCompiler.expression();
 begin
   parsePrecedense(PREC_ASSIGNMENT);
@@ -539,35 +585,6 @@ end;
 procedure TCompiler.string_(const canAssign: Boolean);
 begin
   emitConstant(OBJ_VAL(currentChunk().objs.copyString(parser.previous.start + 1, parser.previous.length - 2)));
-end;
-
-procedure TCompiler.namedVariable(const name: TToken; const canAssign: Boolean);
-var
-  arg: Integer;
-  getOp, setOp: OpCode;
-begin
-  arg := resolveLocal(current, name);
-  if arg <> -1 then
-  begin
-    getOp := OP_GET_LOCAL;
-    setOp := OP_SET_LOCAL;
-  end
-  else
-  begin
-    arg := identifierConstant(name);
-    getOp := OP_GET_GLOBAL;
-    setOp := OP_SET_GLOBAL;
-  end;
-
-  // arg from resolveLocal will never exceed UInt8 range
-  // so LONG part of the emit code should never execute for local variables
-  if canAssign and match(TOKEN_EQUAL) then
-  begin
-    expression();
-    emitCodeVar(setOp, OP_SET_GLOBAL_LONG, arg);
-  end
-  else
-    emitCodeVar(getOp, OP_GET_GLOBAL_LONG, arg);
 end;
 
 procedure TCompiler.variable(const canAssign: Boolean);

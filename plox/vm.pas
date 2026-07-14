@@ -118,6 +118,7 @@ var
   valA, valB: TValue;
   pval: PValue;
   name: PObjString;
+  slot: Byte;
 
   function READ_BYTE: Byte;
   begin
@@ -230,6 +231,14 @@ begin
       OP_TRUE: push(BOOL_VAL(true));
       OP_FALSE: push(BOOL_VAL(false));
       OP_POP: pop();
+      OP_SET_LOCAL: begin
+        slot := READ_BYTE;
+        stack[slot] := peek(0)^;
+      end;
+      OP_GET_LOCAL: begin
+        slot := READ_BYTE;
+        push(stack[slot]);
+      end;
       OP_SET_GLOBAL,
       OP_SET_GLOBAL_LONG: begin
         if instruction = OP_SET_GLOBAL then

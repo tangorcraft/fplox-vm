@@ -28,6 +28,18 @@ begin
   Result := offset + 1;
 end;
 
+function byteIntsruction(const op: OpCode; const C: TChunk; const offset: integer): integer;
+var
+  slot: Byte;
+  name: string;
+begin
+  Str(op, name);
+  slot := C.code[offset+1];
+  printf('%-16s %4d'+NL, [name, slot]);
+  Result := offset + 2;
+end;
+
+
 procedure print_constant(const name: string; const constant: integer; const V: TValue);
 begin
   printf('%-16s %4d ', [name, constant]);
@@ -35,19 +47,23 @@ begin
   print(NL);
 end;
 
-function constantIntsruction(const name: string; const C: TChunk; const offset: integer): integer;
+function constantIntsruction(const op: OpCode; const C: TChunk; const offset: integer): integer;
 var
   constant: Byte;
+  name: string;
 begin
+  Str(op, name);
   constant := C.code[offset+1];
   print_constant(name, constant, C.constants.values[constant]);
   Result := offset + 2;
 end;
 
-function constantLongIntsruction(const name: string; const C: TChunk; const offset: integer): integer;
+function constantLongIntsruction(const op: OpCode; const C: TChunk; const offset: integer): integer;
 var
   constant: integer;
+  name: string;
 begin
+  Str(op, name);
   constant := (C.code[offset+1] shl 16) + (C.code[offset+2] shl 8) + C.code[offset+3];
   print_constant(name, constant, C.constants.values[constant]);
   Result := offset + 4;
@@ -81,29 +97,7 @@ begin
   case (instruction) of
     OP_HALT,
     OP_PRINT,
-    OP_RETURN:
-      Result := simpleIntsruction(instruction, offset);
-    OP_CONSTANT:
-      Result := constantIntsruction('OP_CONSTANT', C, offset);
-    OP_CONSTANT_LONG:
-      Result := constantLongIntsruction('OP_CONSTANT_LONG', C, offset);
-    OP_NIL,
-    OP_TRUE,
-    OP_FALSE,
-    OP_POP:
-      Result := simpleIntsruction(instruction, offset);
-    OP_SET_GLOBAL:
-      Result := constantIntsruction('OP_SET_GLOBAL', C, offset);
-    OP_SET_GLOBAL_LONG:
-      Result := constantLongIntsruction('OP_SET_GLOBAL_LONG', C, offset);
-    OP_GET_GLOBAL:
-      Result := constantIntsruction('OP_GET_GLOBAL', C, offset);
-    OP_GET_GLOBAL_LONG:
-      Result := constantLongIntsruction('OP_GET_GLOBAL_LONG', C, offset);
-    OP_DEFINE_GLOBAL:
-      Result := constantIntsruction('OP_DEFINE_GLOBAL', C, offset);
-    OP_DEFINE_GLOBAL_LONG:
-      Result := constantLongIntsruction('OP_DEFINE_GLOBAL_LONG', C, offset);
+    OP_RETURN,
     OP_NOT,
     OP_NEGATE,
     OP_EQUAL,
@@ -112,8 +106,25 @@ begin
     OP_ADD,
     OP_SUBTRACT,
     OP_MULTIPLY,
-    OP_DIVIDE:
+    OP_DIVIDE,
+    OP_NIL,
+    OP_TRUE,
+    OP_FALSE,
+    OP_POP:
       Result := simpleIntsruction(instruction, offset);
+    OP_CONSTANT,
+    OP_SET_GLOBAL,
+    OP_GET_GLOBAL,
+    OP_DEFINE_GLOBAL:
+      Result := constantIntsruction(instruction, C, offset);
+    OP_CONSTANT_LONG,
+    OP_SET_GLOBAL_LONG,
+    OP_GET_GLOBAL_LONG,
+    OP_DEFINE_GLOBAL_LONG:
+      Result := constantLongIntsruction(instruction, C, offset);
+    OP_SET_LOCAL,
+    OP_GET_LOCAL:
+      Result := byteIntsruction(instruction, C, offset);
 
   else
     begin
