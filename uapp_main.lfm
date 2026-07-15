@@ -1,17 +1,18 @@
 object FMain: TFMain
   Left = 256
-  Height = 673
+  Height = 653
   Top = 145
   Width = 1267
   Caption = 'Lox Interpreter'
-  ClientHeight = 673
+  ClientHeight = 653
   ClientWidth = 1267
+  Menu = MainMenu
   LCLVersion = '4.6.0.0'
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   object MemoLox: TMemo
     Left = 0
-    Height = 673
+    Height = 653
     Top = 0
     Width = 352
     Align = alLeft
@@ -25,11 +26,11 @@ object FMain: TFMain
   end
   object PanelMiddle: TPanel
     Left = 357
-    Height = 673
+    Height = 653
     Top = 0
     Width = 147
     Align = alLeft
-    ClientHeight = 673
+    ClientHeight = 653
     ClientWidth = 147
     TabOrder = 1
     object BRunLox: TButton
@@ -50,10 +51,40 @@ object FMain: TFMain
       TabOrder = 1
       OnClick = BClearConsoleClick
     end
+    object GroupBoxDebug: TGroupBox
+      Left = 0
+      Height = 184
+      Top = 88
+      Width = 144
+      Caption = 'Debug'
+      ClientHeight = 164
+      ClientWidth = 140
+      TabOrder = 2
+      object cbDebugPrintCode: TCheckBox
+        Left = 8
+        Height = 19
+        Top = 8
+        Width = 74
+        Caption = 'Print Code'
+        Checked = True
+        State = cbChecked
+        TabOrder = 0
+        OnChange = cbDebugPrintCodeChange
+      end
+      object cbDebugTraceExecution: TCheckBox
+        Left = 8
+        Height = 19
+        Top = 32
+        Width = 101
+        Caption = 'Trace Execution'
+        TabOrder = 1
+        OnChange = cbDebugTraceExecutionChange
+      end
+    end
   end
   object MemoConsole: TMemo
     Left = 504
-    Height = 673
+    Height = 653
     Top = 0
     Width = 763
     Align = alClient
@@ -68,9 +99,16 @@ object FMain: TFMain
   end
   object Splitter1: TSplitter
     Left = 352
-    Height = 673
+    Height = 653
     Top = 0
     Width = 5
     AutoSnap = False
+  end
+  object MainMenu: TMainMenu
+    Left = 56
+    Top = 136
+    object miTest: TMenuItem
+      Caption = 'Test'
+    end
   end
 end

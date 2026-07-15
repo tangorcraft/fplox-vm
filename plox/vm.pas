@@ -213,7 +213,8 @@ begin
   while True do
   begin
     {$ifdef DEBUG_TRACE_EXECUTION}
-    debug_trace;
+    if debugTraceExecution then
+      debug_trace;
     {$endif}
     instruction := READ_Code;
     case instruction of

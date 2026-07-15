@@ -835,7 +835,7 @@ begin
   endCompiler();
   Result := not parser.hadError;
   {$ifdef DEBUG_PRINT_CODE}
-  if Result then
+  if Result and debugPrintCode then
     disassembleChunk(currentChunk(), 'code');
   {$endif}
 end;

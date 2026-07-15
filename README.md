@@ -21,8 +21,7 @@ Currently completed chapters:
 * Local variables;
 * Jumping back and forth;
   * The book say that implementation is Turing complete at this point, so I decided to publish it to github;
-
-I'm going to add tests from original Lox repository and implement a way to easily load them into the app, before proceeding to the next chapter.
+  * Added tests from original Lox repository and implemented a way to easily load them into the app;
 
 # License
 

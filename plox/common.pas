@@ -14,6 +14,10 @@ type
 var
   lox_output: TStringMethod;
   lox_error: TStringMethod;
+  {$ifdef DEBUG}
+  debugPrintCode: Boolean = True;
+  debugTraceExecution: Boolean = True;
+  {$endif}
 
 const
   NL = #13; // new line
