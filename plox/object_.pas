@@ -20,10 +20,9 @@ type
   { TObjectManager }
 
   TObjectManager = class
-  private
+  protected
     function allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
     function allocateString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
-  protected
     // moving to protected, should be only called from child class (string interning)
     function takeString(const chars: PChar; const len: Integer; const hash: UInt32): PObjString;
     function copyString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
@@ -43,6 +42,9 @@ procedure printObject(const V: TValue);
 function stringEqual(const A, B: TValue): Boolean;
 
 implementation
+
+uses
+  chunk;
 
 function OBJ_TYPE(const V: TValue): ObjType;
 begin
@@ -67,6 +69,7 @@ end;
 procedure printObject(const V: TValue);
 begin
   case OBJ_TYPE(V) of
+    OBJ_FUNCTION: printFunction(AS_FUNCTION(V));
     OBJ_STRING: print(AS_CSTRING(V));
   end;
 end;
@@ -85,6 +88,9 @@ end;
 procedure freeObject(const O: PLoxObj);
 begin
   case O^.type_ of
+    OBJ_FUNCTION: begin
+      PObjFunction(O)^.chunk.Free;
+    end;
     OBJ_STRING: begin
       with PObjString(O)^ do
         FREE_ARRAY(chars, length_ + 1, SizeOf(Char));

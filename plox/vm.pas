@@ -11,7 +11,8 @@ uses
   chunk, hash_table, hash_set, object_, value, memory, common;
 
 const
-  MAX_STACK = 1024;
+  FRAMES_MAX = 64;
+  STACK_MAX = FRAMES_MAX * 1024;
 
 type
   InterpretResult = (
@@ -21,16 +22,23 @@ type
     INTERPRET_RUNTIME_ERROR
   );
 
+  TCallFrame = record
+    func: PObjFunction;
+    ip: PByte;
+    slots: PValue;
+  end;
+  PCallFrame = ^TCallFrame;
+
   { TLoxVM }
 
   TLoxVM = class
   public
-    FChunk: TChunk;
-    ip: PByte;
-    stack: array[0..MAX_STACK] of TValue;
+    stack: array[0..STACK_MAX] of TValue;
     stackTop: PValue;
-    objs: TObjectManager_SI;
+    objs: TObjectManager_Fun;
     globals: THashTable;
+    frames: array[0..FRAMES_MAX] of TCallFrame;
+    frameCount: Integer;
 
     procedure resetStack;
     procedure push(const V: TValue);
@@ -52,6 +60,7 @@ implementation
 procedure TLoxVM.resetStack;
 begin
   stackTop := @stack[0];
+  frameCount := 0;
 end;
 
 procedure TLoxVM.push(const V: TValue);
@@ -73,20 +82,22 @@ end;
 
 procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const);
 var
+  frame: PCallFrame;
   instruction: SizeInt;
   line: Integer;
 begin
   printf(Fmt, vars, True);
   print(NL, true);
-  instruction := SizeInt(ip - FChunk.code) - 1;
-  line := FChunk.lines[instruction];
+  frame := @frames[frameCount - 1];
+  instruction := SizeInt(frame^.ip - frame^.func^.chunk.code) - 1;
+  line := frame^.func^.chunk.lines[instruction];
   printf('[line %d] in script'+NL, [line], true);
 end;
 
 constructor TLoxVM.Create;
 begin
   resetStack;
-  objs := TObjectManager_SI.Create;
+  objs := TObjectManager_Fun.Create;
   globals := THashTable.Create(objs);
 end;
 
@@ -98,23 +109,28 @@ begin
 end;
 
 function TLoxVM.interpret(const source: string): InterpretResult;
+var
+  func: PObjFunction;
+  frame: PCallFrame;
 begin
-  FChunk := TChunk.Create(objs);
-  try
-    if not compile(source, FChunk) then
-      Exit(INTERPRET_COMPILE_ERROR);
+  func := compile(source, objs);
+  if func = nil then
+    Exit(INTERPRET_COMPILE_ERROR);
 
-    ip := FChunk.code;
-    Result := run();
-  finally
-    FChunk.Free;
-    FChunk := nil;
-  end;
+  push(OBJ_VAL(func));
+  frame := @frames[frameCount];
+  inc(frameCount);
+  frame^.func := func;
+  frame^.ip := func^.chunk.code;
+  frame^.slots := @stack[0];
+
+  Result := run();
 end;
 
 function TLoxVM.run: InterpretResult;
 var
   instruction: OpCode;
+  frame: PCallFrame;
   valA, valB: TValue;
   pval: PValue;
   name: PObjString;
@@ -123,25 +139,25 @@ var
 
   function READ_BYTE: Byte;
   begin
-    Result := ip^;
-    Inc(ip);
+    Result := frame^.ip^;
+    Inc(frame^.ip);
   end;
 
   function READ_Code: OpCode;
   begin
-    Result := OpCode(ip^);
-    Inc(ip);
+    Result := OpCode(frame^.ip^);
+    Inc(frame^.ip);
   end;
 
   function READ_SHORT: Word;
   begin
-    Result := (ip[0] shl 8) or ip[1];
-    Inc(ip, 2);
+    Result := (frame^.ip[0] shl 8) or frame^.ip[1];
+    Inc(frame^.ip, 2);
   end;
 
   function READ_CONSTANT: TValue;
   begin
-    Result := FChunk.constants.values[READ_BYTE];
+    Result := frame^.func^.chunk.constants.values[READ_BYTE];
   end;
 
   function READ_CONSTANT_LONG: TValue;
@@ -149,7 +165,7 @@ var
     index: integer;
   begin
     index := (READ_BYTE shl 16) or (READ_BYTE shl 8) or READ_BYTE;
-    Result := FChunk.constants.values[index];
+    Result := frame^.func^.chunk.constants.values[index];
   end;
 
   function BINARY_NUM_OP(): Boolean;
@@ -205,11 +221,12 @@ var
       inc(slot);
     end;
     print(NL);
-    disassembleInstruction(FChunk, PtrUInt(ip-FChunk.code));
+    disassembleInstruction(frame^.func^.chunk, PtrUInt(frame^.ip - frame^.func^.chunk.code));
   end;
   {$endif}
 
 begin
+  frame := @frames[frameCount - 1];
   while True do
   begin
     {$ifdef DEBUG_TRACE_EXECUTION}
@@ -226,21 +243,21 @@ begin
       end;
       OP_JUMP: begin
         offset := READ_SHORT();
-        inc(ip, offset);
+        inc(frame^.ip, offset);
       end;
       OP_JUMP_IF_FALSE: begin
         offset := READ_SHORT();
         if isFalsey(peek(0)^) then
-          inc(ip, offset);
+          inc(frame^.ip, offset);
       end;
       OP_JUMP_IF_FALSE_POP: begin
         offset := READ_SHORT();
         if isFalsey(pop()) then
-          inc(ip, offset);
+          inc(frame^.ip, offset);
       end;
       OP_LOOP: begin
         offset := READ_SHORT;
-        Dec(ip, offset);
+        Dec(frame^.ip, offset);
       end;
       OP_RETURN: begin
         Exit(INTERPRET_OK);
@@ -259,11 +276,11 @@ begin
       OP_POP: pop();
       OP_SET_LOCAL: begin
         slot := READ_BYTE;
-        stack[slot] := peek(0)^;
+        frame^.slots[slot] := peek(0)^;
       end;
       OP_GET_LOCAL: begin
         slot := READ_BYTE;
-        push(stack[slot]);
+        push(frame^.slots[slot]);
       end;
       OP_SET_GLOBAL,
       OP_SET_GLOBAL_LONG: begin

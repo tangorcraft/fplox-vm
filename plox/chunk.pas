@@ -6,7 +6,7 @@ unit chunk;
 interface
 
 uses
-  Classes, SysUtils, hash_set, object_, value, memory;
+  Classes, SysUtils, hash_set, object_, value, memory, common;
 
 type
   OpCode = (
@@ -66,7 +66,44 @@ type
     procedure writeConstant(const V: TValue; const line: Integer);
   end;
 
+  TObjFunction = record
+    obj: TLoxObj;
+    arity: Integer;
+    chunk: TChunk;
+    name: PObjString;
+  end;
+  PObjFunction = ^TObjFunction;
+
+  { TObjectManager_Fun }
+
+  TObjectManager_Fun = class(TObjectManager_SI)
+  public
+    function newFunction(): PObjFunction;
+  end;
+
+function IS_FUNCTION(const V: TValue): Boolean;
+function AS_FUNCTION(const V: TValue): PObjFunction;
+procedure printFunction(const V: PObjFunction);
+
 implementation
+
+function IS_FUNCTION(const V: TValue): Boolean;
+begin
+  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_FUNCTION);
+end;
+
+function AS_FUNCTION(const V: TValue): PObjFunction;
+begin
+  Result := PObjFunction(V.as_obj);
+end;
+
+procedure printFunction(const V: PObjFunction);
+begin
+  if V^.name = nil then
+    print('<script>')
+  else
+    printf('<fn %s>', [V^.name^.chars]);
+end;
 
 { TChunk }
 
@@ -128,6 +165,16 @@ begin
     write(OP_CONSTANT_LONG, line);
     write24(addConstant(V), line);
   end;
+end;
+
+{ TObjectManager_Fun }
+
+function TObjectManager_Fun.newFunction(): PObjFunction;
+begin
+  Result := allocateObject(sizeof(TObjFunction), OBJ_FUNCTION);
+  Result^.arity := 0;
+  Result^.name := nil;
+  Result^.chunk := TChunk.Create(self);
 end;
 
 end.

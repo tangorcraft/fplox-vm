@@ -10,7 +10,7 @@ uses
   {$ifdef DEBUG_PRINT_CODE}debug,{$endif}
   chunk, object_, value, memory, common;
 
-function compile(const source: string; var C: TChunk): Boolean;
+function compile(const source: string; const mgr: TObjectManager_Fun): PObjFunction;
 
 implementation
 
@@ -50,7 +50,15 @@ type
   end;
   PLocal = ^TLocal;
 
+  TFunctionType = (
+    TYPE_FUNCTION,
+    TYPE_SCRIPT
+  );
+
   TCompilerState = record
+    func: PObjFunction;
+    funType: TFunctionType;
+
     locals: array[Byte] of TLocal;
     localCount: Integer;
     scopeDepth: Integer;
@@ -62,13 +70,13 @@ type
   TCompiler = class
     scanner: TLoxScanner;
     parser: TParser;
-    compilingChunk: TChunk;
     parseRules: array[TokenType] of TParseRule;
     current: PCompilerState;
+    FObjs: TObjectManager_Fun;
 
-    procedure initCompiler(const state: PCompilerState);
+    procedure initCompiler(const state: PCompilerState; const type_: TFunctionType);
 
-    constructor Create;
+    constructor Create(const mgr: TObjectManager_Fun);
 
     function currentChunk: TChunk;
     procedure errorAt(const T: TToken; const msg: PChar);
@@ -92,7 +100,7 @@ type
     function emitJump(const B: OpCode): Integer;
     procedure patchJump(const offset: Integer);
     procedure emitLoop(const loopStart: integer);
-    procedure endCompiler();
+    function endCompiler(): PObjFunction;
 
     procedure parsePrecedense(const P: TPrecedence);
     function identifierConstant(const name: TToken): Integer;
@@ -128,14 +136,14 @@ type
     procedure and_(const canAssign: Boolean);
     procedure or_(const canAssign: Boolean);
 
-    function compile_(const source: string; var C: TChunk): Boolean;
+    function compile_(const source: string): PObjFunction;
   end;
 
-function compile(const source: string; var C: TChunk): Boolean;
+function compile(const source: string; const mgr: TObjectManager_Fun): PObjFunction;
 begin
-  with TCompiler.Create do
+  with TCompiler.Create(mgr) do
   try
-    Result := compile_(source, C);
+    Result := compile_(source);
   finally
     Free;
   end;
@@ -143,14 +151,25 @@ end;
 
 { TCompiler }
 
-procedure TCompiler.initCompiler(const state: PCompilerState);
+procedure TCompiler.initCompiler(const state: PCompilerState; const type_: TFunctionType);
+var
+  local: PLocal;
 begin
+  state^.func := nil;
+  state^.funType := type_;
   state^.localCount := 0;
   state^.scopeDepth := 0;
+  state^.func := FObjs.newFunction();
   current := state;
+
+  local := @current^.locals[current^.localCount];
+  inc(current^.localCount);
+  local^.depth := 0;
+  local^.name.start := '';
+  local^.name.length := 0;
 end;
 
-constructor TCompiler.Create;
+constructor TCompiler.Create(const mgr: TObjectManager_Fun);
 
   procedure init_rule(const token: TokenType; const prefix, infix: TParseProc; const precedence: TPrecedence);
   begin
@@ -160,6 +179,7 @@ constructor TCompiler.Create;
   end;
 
 begin
+  FObjs := mgr;
   init_rule(TOKEN_LEFT_PAREN   , @grouping, nil    , PREC_NONE);
   init_rule(TOKEN_RIGHT_PAREN  , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_LEFT_BRACE   , nil      , nil    , PREC_NONE);
@@ -204,7 +224,7 @@ end;
 
 function TCompiler.currentChunk: TChunk;
 begin
-  Result := compilingChunk;
+  Result := current^.func^.chunk;
 end;
 
 procedure TCompiler.errorAt(const T: TToken; const msg: PChar);
@@ -362,9 +382,10 @@ begin
   emitByte(offset and $ff);
 end;
 
-procedure TCompiler.endCompiler();
+function TCompiler.endCompiler: PObjFunction;
 begin
   emitReturn();
+  Result := current^.func;
 end;
 
 procedure TCompiler.parsePrecedense(const P: TPrecedence);
@@ -815,15 +836,14 @@ begin
   patchJump(endJump);
 end;
 
-function TCompiler.compile_(const source: string; var C: TChunk): Boolean;
+function TCompiler.compile_(const source: string): PObjFunction;
 var
   state: TCompilerState;
 begin
   parser.hadError := false;
   parser.panicMode := false;
 
-  initCompiler(@state);
-  compilingChunk := C;
+  initCompiler(@state, TYPE_SCRIPT);
   scanner := TLoxScanner.Create(source);
   try
     advance();
@@ -832,11 +852,17 @@ begin
   finally
     scanner.Free;
   end;
-  endCompiler();
-  Result := not parser.hadError;
+  Result := endCompiler();
+  if parser.hadError then
+    Result := nil;
   {$ifdef DEBUG_PRINT_CODE}
-  if Result and debugPrintCode then
-    disassembleChunk(currentChunk(), 'code');
+  if (not parser.hadError) and debugPrintCode then
+  begin
+    if Result^.name = nil then
+      disassembleChunk(currentChunk(), '<script>')
+    else
+      disassembleChunk(currentChunk(), Result^.name^.chars);
+  end;
   {$endif}
 end;
 

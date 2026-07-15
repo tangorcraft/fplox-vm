@@ -19,6 +19,7 @@ type
   );
 
   ObjType = (
+    OBJ_FUNCTION,
     OBJ_STRING
   );
 
