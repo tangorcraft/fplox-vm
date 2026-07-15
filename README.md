@@ -24,7 +24,11 @@ Currently completed chapters:
 
 I'm going to add tests from original Lox repository and implement a way to easily load them into the app, before proceeding to the next chapter.
 
-# License (GPL 3.0 or later)
+# License
+
+For files in "test" directory see [test/LICENSE](test/LICENSE) file.
+
+Each other file in this repository falls under GPL 3.0 or later license.
 
 Copyright (C) 2026  Ivan Markov (TangorCraft)
 
