@@ -33,10 +33,12 @@ type
     destructor Destroy; override;
   end;
 
-function OBJ_TYPE(const V: TValue): ObjType;
-function IS_STRING(const V: TValue): Boolean;
-function AS_STRING(const V: TValue): PObjString;
-function AS_CSTRING(const V: TValue): PChar;
+{$inline on}
+
+function OBJ_TYPE(const V: TValue): ObjType; inline;
+function IS_STRING(const V: TValue): Boolean; inline;
+function AS_STRING(const V: TValue): PObjString; inline;
+function AS_CSTRING(const V: TValue): PChar; inline;
 
 procedure printObject(const V: TValue);
 function stringEqual(const A, B: TValue): Boolean;
@@ -46,25 +48,27 @@ implementation
 uses
   chunk;
 
-function OBJ_TYPE(const V: TValue): ObjType;
+function OBJ_TYPE(const V: TValue): ObjType; inline;
 begin
   Result := V.as_obj^.type_;
 end;
 
-function IS_STRING(const V: TValue): Boolean;
+function IS_STRING(const V: TValue): Boolean; inline;
 begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_STRING);
 end;
 
-function AS_STRING(const V: TValue): PObjString;
+function AS_STRING(const V: TValue): PObjString; inline;
 begin
   Result := PObjString(V.as_obj);
 end;
 
-function AS_CSTRING(const V: TValue): PChar;
+function AS_CSTRING(const V: TValue): PChar; inline;
 begin
   Result := PObjString(V.as_obj)^.chars;
 end;
+
+{$inline off}
 
 procedure printObject(const V: TValue);
 begin

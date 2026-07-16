@@ -58,12 +58,12 @@ type
 
     procedure defineNative(const name: string; const arity: integer; const func: TNativeFn);
 
-    function interpret(const source: string): InterpretResult;
-    function run(): InterpretResult;
-
     procedure pause(const callback: TMethod);
     function is_paused: boolean;
     procedure stop;
+
+    function interpret(const source: string): InterpretResult;
+    function run(): InterpretResult;
   end;
 
 implementation
@@ -219,6 +219,21 @@ begin
   popN(2);
 end;
 
+procedure TLoxVM.pause(const callback: TMethod);
+begin
+  pause_callback := callback;
+end;
+
+function TLoxVM.is_paused: boolean;
+begin
+  Result := Assigned(pause_callback);
+end;
+
+procedure TLoxVM.stop;
+begin
+  halted := true;
+end;
+
 function TLoxVM.interpret(const source: string): InterpretResult;
 var
   func: PObjFunction;
@@ -233,6 +248,8 @@ begin
   Result := run();
 end;
 
+{$inline on}
+
 function TLoxVM.run: InterpretResult;
 var
   instruction: OpCode;
@@ -243,19 +260,19 @@ var
   tmpByte: Byte;
   offset: Word;
 
-  function READ_BYTE: Byte;
+  function READ_BYTE: Byte; inline;
   begin
     Result := frame^.ip^;
     Inc(frame^.ip);
   end;
 
-  function READ_Code: OpCode;
+  function READ_Code: OpCode; inline;
   begin
     Result := OpCode(frame^.ip^);
     Inc(frame^.ip);
   end;
 
-  function READ_SHORT: Word;
+  function READ_SHORT: Word; inline;
   begin
     Result := (frame^.ip[0] shl 8) or frame^.ip[1];
     Inc(frame^.ip, 2);
@@ -494,21 +511,6 @@ begin
         if not BINARY_NUM_OP() then Exit(INTERPRET_RUNTIME_ERROR);
     end;
   end;
-end;
-
-procedure TLoxVM.pause(const callback: TMethod);
-begin
-  pause_callback := callback;
-end;
-
-function TLoxVM.is_paused: boolean;
-begin
-  Result := Assigned(pause_callback);
-end;
-
-procedure TLoxVM.stop;
-begin
-  halted := true;
 end;
 
 end.

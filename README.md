@@ -22,6 +22,12 @@ Currently completed chapters:
 * Jumping back and forth;
   * The book say that implementation is Turing complete at this point, so I decided to publish it to github;
   * Added tests from original Lox repository and implemented a way to easily load them into the app;
+* Calls and functions;
+  * Added arity check for native function calls;
+  * "A really inefficient recursive Fibonacci function" is running around 5 times slower than equivalent program in Python 3.12.2;
+    * I have not tried Python 3.7.3, but I doubt it will run that much slower than 3.12.2;
+    * I have a guess this is because many things done with macro in clox I had to remake with actual functions and procedures;
+    * Adding inline directive did increase the speed, but not much, now it's just 4 times slower than Python;
 
 # License
 

@@ -86,27 +86,31 @@ type
     function newNative(const fn: TNativeFn): PObjFunction;
   end;
 
-function IS_FUNCTION(const V: TValue): Boolean;
-function IS_NATIVE_FN(const V: TValue): Boolean;
-function AS_FUNCTION(const V: TValue): PObjFunction;
+{$inline on}
+
+function IS_FUNCTION(const V: TValue): Boolean; inline;
+function IS_NATIVE_FN(const V: TValue): Boolean; inline;
+function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 procedure printFunction(const V: PObjFunction);
 
 implementation
 
-function IS_FUNCTION(const V: TValue): Boolean;
+function IS_FUNCTION(const V: TValue): Boolean; inline;
 begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_FUNCTION);
 end;
 
-function IS_NATIVE_FN(const V: TValue): Boolean;
+function IS_NATIVE_FN(const V: TValue): Boolean; inline;
 begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_NATIVE_FN);
 end;
 
-function AS_FUNCTION(const V: TValue): PObjFunction;
+function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 begin
   Result := PObjFunction(V.as_obj);
 end;
+
+{$inline off}
 
 procedure printFunction(const V: PObjFunction);
 begin

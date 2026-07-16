@@ -62,10 +62,12 @@ const
   TRUE_VAL: TValue = (type_: VAL_BOOL; as_bool: true;);
   FALSE_VAL: TValue = (type_: VAL_BOOL; as_bool: false;);
 
-function IS_BOOL(const V: TValue): Boolean;
-function IS_NUMBER(const V: TValue): Boolean;
-function IS_NIL(const V: TValue): Boolean;
-function IS_OBJ(const V: TValue): Boolean;
+{$inline on}
+
+function IS_BOOL(const V: TValue): Boolean; inline;
+function IS_NUMBER(const V: TValue): Boolean; inline;
+function IS_NIL(const V: TValue): Boolean; inline;
+function IS_OBJ(const V: TValue): Boolean; inline;
 
 implementation
 
@@ -122,25 +124,27 @@ begin
   Result.as_obj := V;
 end;
 
-function IS_BOOL(const V: TValue): Boolean;
+function IS_BOOL(const V: TValue): Boolean; inline;
 begin
   Result := V.type_ = VAL_BOOL;
 end;
 
-function IS_NUMBER(const V: TValue): Boolean;
+function IS_NUMBER(const V: TValue): Boolean; inline;
 begin
   Result := V.type_ = VAL_NUMBER;
 end;
 
-function IS_NIL(const V: TValue): Boolean;
+function IS_NIL(const V: TValue): Boolean; inline;
 begin
   Result := V.type_ = VAL_NIL;
 end;
 
-function IS_OBJ(const V: TValue): Boolean;
+function IS_OBJ(const V: TValue): Boolean; inline;
 begin
   Result := V.type_ = VAL_OBJ;
 end;
+
+{$inline off}
 
 { TValueArray }
 
