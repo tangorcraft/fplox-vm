@@ -261,6 +261,7 @@ var
   pval: PValue;
   name: PObjString;
   tmpByte: Byte;
+  tmpDouble: Double;
   offset: Word;
 
   function READ_BYTE: Byte; inline;
@@ -292,28 +293,6 @@ var
   begin
     index := (READ_BYTE shl 16) or (READ_BYTE shl 8) or READ_BYTE;
     Result := frame^.func^.chunk.constants.values[index];
-  end;
-
-  function BINARY_NUM_OP(): Boolean;
-  var
-    a, b: double;
-  begin
-    if not (IS_NUMBER(peek(0)^) and IS_NUMBER(peek(1)^)) then
-    begin
-      runtimeError('Operands must be numbers.',[], local_ip);
-      Exit(false);
-    end;
-    b := pop().as_number; // order matters
-    a := pop().as_number;
-    case instruction of
-      OP_GREATER : push(BOOL_VAL(a > b));
-      OP_LESS    : push(BOOL_VAL(a < b));
-      OP_ADD     : push(NUMBER_VAL(a + b));
-      OP_SUBTRACT: push(NUMBER_VAL(a - b));
-      OP_MULTIPLY: push(NUMBER_VAL(a * b));
-      OP_DIVIDE  : push(NUMBER_VAL(a / b));
-    end;
-    Result := true;
   end;
 
   procedure concatenate();
@@ -495,9 +474,15 @@ begin
         valA := pop();
         push(BOOL_VAL(valuesEqual(valA, valB)));
       end;
-      OP_GREATER,
+      {$macro on}
+      OP_GREATER:
+        {$define MACRO_VAL:=BOOL_VAL}
+        {$define MACRO_OP:=>}
+        {$i vm_binary_op.inc}
       OP_LESS:
-        if not BINARY_NUM_OP() then Exit(INTERPRET_RUNTIME_ERROR);
+        {$define MACRO_VAL:=BOOL_VAL}
+        {$define MACRO_OP:=<}
+        {$i vm_binary_op.inc}
       OP_ADD: begin
         if IS_STRING(peek(0)^) and IS_STRING(peek(1)^) then
           concatenate()
@@ -512,10 +497,22 @@ begin
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
       end;
-      OP_SUBTRACT,
-      OP_MULTIPLY,
+      OP_SUBTRACT:
+        {$define MACRO_VAL:=NUMBER_VAL}
+        {$define MACRO_OP:=-}
+        {$i vm_binary_op.inc}
+      OP_MULTIPLY:
+        {$define MACRO_VAL:=NUMBER_VAL}
+        {$define MACRO_OP:=*}
+        {$i vm_binary_op.inc}
       OP_DIVIDE:
-        if not BINARY_NUM_OP() then Exit(INTERPRET_RUNTIME_ERROR);
+        {$define MACRO_VAL:=NUMBER_VAL}
+        {$define MACRO_OP:=/}
+        {$i vm_binary_op.inc}
+
+      {$undef MACRO_VAL}
+      {$undef MACRO_OP}
+      {$macro off}
     end;
   end;
 end;
