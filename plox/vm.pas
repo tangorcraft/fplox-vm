@@ -44,6 +44,8 @@ type
     procedure push(const V: TValue);
     function pop: TValue;
     function peek(const distance: Integer): PValue;
+    function call(const func: PObjFunction; const argCount: Integer): Boolean;
+    function callValue(const callee: TValue; const argCount: Integer): Boolean;
     procedure runtimeError(const Fmt: string; vars: array of const);
   public
     constructor Create;
@@ -80,18 +82,65 @@ begin
   Result := stackTop - 1 - distance;
 end;
 
+function TLoxVM.call(const func: PObjFunction; const argCount: Integer): Boolean;
+var
+  frame: PCallFrame;
+begin
+  if argCount <> func^.arity then
+  begin
+    runtimeError('Expected %d arguments but got %d.', [func^.arity, argCount]);
+    Exit(false);
+  end;
+
+  if frameCount = FRAMES_MAX then
+  begin
+    runtimeError('Stack overflow.', []);
+    Exit(false);
+  end;
+
+  frame := @frames[frameCount];
+  inc(frameCount);
+  frame^.func := func;
+  frame^.ip := func^.chunk.code;
+  frame^.slots := stackTop - argCount - 1;
+  Result := True;
+end;
+
+function TLoxVM.callValue(const callee: TValue; const argCount: Integer): Boolean;
+begin
+  if IS_OBJ(callee) then
+    case OBJ_TYPE(callee) of
+      OBJ_FUNCTION:
+        Exit(call(AS_FUNCTION(callee), argCount));
+    end;
+  runtimeError('Can only call functions and classes.', []);
+  Result := false;
+end;
+
 procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const);
 var
   frame: PCallFrame;
+  func: PObjFunction;
   instruction: SizeInt;
-  line: Integer;
+  line, i: Integer;
 begin
   printf(Fmt, vars, True);
   print(NL, true);
-  frame := @frames[frameCount - 1];
-  instruction := SizeInt(frame^.ip - frame^.func^.chunk.code) - 1;
-  line := frame^.func^.chunk.lines[instruction];
-  printf('[line %d] in script'+NL, [line], true);
+
+  for i := frameCount - 1 downto 0 do
+  begin
+    frame := @frames[i];
+    func := frame^.func;
+    instruction := SizeInt(frame^.ip - frame^.func^.chunk.code) - 1;
+    line := func^.chunk.lines[instruction];
+    printf('[line %d] in ', [line], true);
+    if func^.name = nil then
+      print('script'+NL, true)
+    else
+      printf('%s()'+NL, [func^.name^.chars], true);
+  end;
+
+  resetStack();
 end;
 
 constructor TLoxVM.Create;
@@ -111,18 +160,13 @@ end;
 function TLoxVM.interpret(const source: string): InterpretResult;
 var
   func: PObjFunction;
-  frame: PCallFrame;
 begin
   func := compile(source, objs);
   if func = nil then
     Exit(INTERPRET_COMPILE_ERROR);
 
   push(OBJ_VAL(func));
-  frame := @frames[frameCount];
-  inc(frameCount);
-  frame^.func := func;
-  frame^.ip := func^.chunk.code;
-  frame^.slots := @stack[0];
+  call(func, 0);
 
   Result := run();
 end;
@@ -134,7 +178,7 @@ var
   valA, valB: TValue;
   pval: PValue;
   name: PObjString;
-  slot: Byte;
+  tmpByte: Byte;
   offset: Word;
 
   function READ_BYTE: Byte;
@@ -259,8 +303,24 @@ begin
         offset := READ_SHORT;
         Dec(frame^.ip, offset);
       end;
+      OP_CALL: begin
+        tmpByte := READ_BYTE(); // argCount
+        if not callValue(peek(tmpByte)^, tmpByte) then
+          Exit(INTERPRET_RUNTIME_ERROR);
+        frame := @frames[frameCount - 1];
+      end;
       OP_RETURN: begin
-        Exit(INTERPRET_OK);
+        valA := pop();
+        dec(frameCount);
+        if frameCount = 0 then
+        begin
+          pop();
+          Exit(INTERPRET_OK);
+        end;
+
+        stackTop := frame^.slots;
+        push(valA);
+        frame := @frames[frameCount - 1];
       end;
       OP_CONSTANT: begin
         valA := READ_CONSTANT;
@@ -275,12 +335,12 @@ begin
       OP_FALSE: push(BOOL_VAL(false));
       OP_POP: pop();
       OP_SET_LOCAL: begin
-        slot := READ_BYTE;
-        frame^.slots[slot] := peek(0)^;
+        tmpByte := READ_BYTE; // slot
+        frame^.slots[tmpByte] := peek(0)^;
       end;
       OP_GET_LOCAL: begin
-        slot := READ_BYTE;
-        push(frame^.slots[slot]);
+        tmpByte := READ_BYTE; // slot
+        push(frame^.slots[tmpByte]);
       end;
       OP_SET_GLOBAL,
       OP_SET_GLOBAL_LONG: begin

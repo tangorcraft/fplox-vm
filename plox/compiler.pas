@@ -55,7 +55,9 @@ type
     TYPE_SCRIPT
   );
 
+  PCompilerState = ^TCompilerState;
   TCompilerState = record
+    enclosing: PCompilerState;
     func: PObjFunction;
     funType: TFunctionType;
 
@@ -63,7 +65,6 @@ type
     localCount: Integer;
     scopeDepth: Integer;
   end;
-  PCompilerState = ^TCompilerState;
 
   { TCompiler }
 
@@ -111,6 +112,8 @@ type
     procedure defineVariable(const global: Integer);
     function resolveLocal(const compiler: PCompilerState; const name: TToken): integer;
     procedure namedVariable(const name: TToken; const canAssign: Boolean);
+    function argumentList(): Byte;
+
     procedure expression();
     procedure beginScope();
     procedure endScope();
@@ -118,9 +121,12 @@ type
     procedure expressionStatement();
     procedure printStatement();
     procedure ifStatement();
+    procedure returnStatement();
     procedure whileStatement();
     procedure forStatement();
     procedure statement();
+    procedure function_(const type_: TFunctionType);
+    procedure funDeclaration();
     procedure varDeclaration();
     procedure declaration();
     procedure synchronize();
@@ -132,6 +138,7 @@ type
     procedure unary(const canAssign: Boolean);
     procedure binary(const canAssign: Boolean);
     procedure grouping(const canAssign: Boolean);
+    procedure call(const canAssign: Boolean);
 
     procedure and_(const canAssign: Boolean);
     procedure or_(const canAssign: Boolean);
@@ -155,12 +162,15 @@ procedure TCompiler.initCompiler(const state: PCompilerState; const type_: TFunc
 var
   local: PLocal;
 begin
+  state^.enclosing := current;
   state^.func := nil;
   state^.funType := type_;
   state^.localCount := 0;
   state^.scopeDepth := 0;
   state^.func := FObjs.newFunction();
   current := state;
+  if type_ <> TYPE_SCRIPT then
+    current^.func^.name := FObjs.copyString(parser.previous.start, parser.previous.length);
 
   local := @current^.locals[current^.localCount];
   inc(current^.localCount);
@@ -180,7 +190,8 @@ constructor TCompiler.Create(const mgr: TObjectManager_Fun);
 
 begin
   FObjs := mgr;
-  init_rule(TOKEN_LEFT_PAREN   , @grouping, nil    , PREC_NONE);
+  current := nil;
+  init_rule(TOKEN_LEFT_PAREN   , @grouping, @call  , PREC_CALL);
   init_rule(TOKEN_RIGHT_PAREN  , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_LEFT_BRACE   , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_RIGHT_BRACE  , nil      , nil    , PREC_NONE);
@@ -338,6 +349,7 @@ end;
 
 procedure TCompiler.emitReturn();
 begin
+  emitCode(OP_NIL);
   emitCode(OP_RETURN);
 end;
 
@@ -386,6 +398,16 @@ function TCompiler.endCompiler: PObjFunction;
 begin
   emitReturn();
   Result := current^.func;
+  {$ifdef DEBUG_PRINT_CODE}
+  if (not parser.hadError) and debugPrintCode then
+  begin
+    if Result^.name = nil then
+      disassembleChunk(currentChunk(), '<script>')
+    else
+      disassembleChunk(currentChunk(), Result^.name^.chars);
+  end;
+  {$endif}
+  current := current^.enclosing;
 end;
 
 procedure TCompiler.parsePrecedense(const P: TPrecedence);
@@ -443,6 +465,8 @@ end;
 
 procedure TCompiler.markInitialized();
 begin
+  if current^.scopeDepth = 0 then
+    Exit;
   current^.locals[current^.localCount - 1].depth := current^.scopeDepth;
 end;
 
@@ -538,6 +562,18 @@ begin
     emitCodeVar(getOp, OP_GET_GLOBAL_LONG, arg);
 end;
 
+function TCompiler.argumentList(): Byte;
+begin
+  Result := 0;
+  if not check(TOKEN_RIGHT_PAREN) then
+  repeat
+    expression();
+    if Result = 255 then
+      error('Can''t have more than 255 arguments.');
+    inc(Result);
+  until not match(TOKEN_COMMA);
+  consume(TOKEN_RIGHT_PAREN, 'Expect ")" after arguments.');
+end;
 
 procedure TCompiler.expression();
 begin
@@ -603,6 +639,20 @@ begin
   if match(TOKEN_ELSE) then
     statement();
   patchJump(elseJump);
+end;
+
+procedure TCompiler.returnStatement();
+begin
+  if current^.funType = TYPE_SCRIPT then
+    error('Can''t return from top-level code.');
+
+  if match(TOKEN_SEMICOLON) then
+    emitReturn()
+  else begin
+    expression();
+    consume(TOKEN_SEMICOLON, 'Expect ";" after return value.');
+    emitCode(OP_RETURN);
+  end;
 end;
 
 procedure TCompiler.whileStatement();
@@ -681,6 +731,8 @@ begin
     forStatement()
   else if match(TOKEN_IF) then
     ifStatement()
+  else if match(TOKEN_RETURN) then
+    returnStatement()
   else if match(TOKEN_WHILE) then
     whileStatement()
   else if match(TOKEN_LEFT_BRACE) then
@@ -691,6 +743,42 @@ begin
   end
   else
     expressionStatement();
+end;
+
+procedure TCompiler.function_(const type_: TFunctionType);
+var
+  compiler: TCompilerState;
+  func: PObjFunction;
+  constant: Integer;
+begin
+  initCompiler(@compiler, type_);
+  beginScope();
+
+  consume(TOKEN_LEFT_PAREN, 'Expect "(" after function name.');
+  if not check(TOKEN_RIGHT_PAREN) then
+  repeat
+    inc(current^.func^.arity);
+    if current^.func^.arity > 255 then
+      errorAtCurrent('Can''t have more than 255 parameters.');
+    constant := parseVariable('Expect parameter name.');
+    defineVariable(constant);
+  until not match(TOKEN_COMMA);
+  consume(TOKEN_RIGHT_PAREN, 'Expect ")" after parameters.');
+  consume(TOKEN_LEFT_BRACE, 'Expect "{" before function body.');
+  block();
+
+  func := endCompiler();
+  emitConstant(OBJ_VAL(func));
+end;
+
+procedure TCompiler.funDeclaration();
+var
+  global: Integer;
+begin
+  global := parseVariable('Expect function name.');
+  markInitialized();
+  function_(TYPE_FUNCTION);
+  defineVariable(global);
 end;
 
 procedure TCompiler.varDeclaration();
@@ -710,7 +798,9 @@ end;
 
 procedure TCompiler.declaration();
 begin
-  if match(TOKEN_VAR) then
+  if match(TOKEN_FUN) then
+    funDeclaration()
+  else if match(TOKEN_VAR) then
     varDeclaration()
   else
     statement();
@@ -810,6 +900,14 @@ begin
   consume(TOKEN_RIGHT_PAREN, 'Expect ")" after expression.');
 end;
 
+procedure TCompiler.call(const canAssign: Boolean);
+var
+  argCount: Byte;
+begin
+  argCount := argumentList();
+  emitCodeByte(OP_CALL, argCount);
+end;
+
 procedure TCompiler.and_(const canAssign: Boolean);
 var
   endJump: Integer;
@@ -855,15 +953,6 @@ begin
   Result := endCompiler();
   if parser.hadError then
     Result := nil;
-  {$ifdef DEBUG_PRINT_CODE}
-  if (not parser.hadError) and debugPrintCode then
-  begin
-    if Result^.name = nil then
-      disassembleChunk(currentChunk(), '<script>')
-    else
-      disassembleChunk(currentChunk(), Result^.name^.chars);
-  end;
-  {$endif}
 end;
 
 end.

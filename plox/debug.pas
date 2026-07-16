@@ -134,6 +134,7 @@ begin
     OP_GET_GLOBAL_LONG,
     OP_DEFINE_GLOBAL_LONG:
       Result := constantLongIntsruction(instruction, C, offset);
+    OP_CALL,
     OP_SET_LOCAL,
     OP_GET_LOCAL:
       Result := byteIntsruction(instruction, C, offset);
