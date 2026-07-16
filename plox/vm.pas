@@ -51,7 +51,7 @@ type
     function call(const func: PObjFunction; const argCount: Integer): Boolean;
     function callNative(const func: PObjFunction; const argCount: Integer): Boolean;
     function callValue(const callee: TValue; const argCount: Integer): Boolean;
-    procedure runtimeError(const Fmt: string; vars: array of const);
+    procedure runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte = nil);
   public
     constructor Create;
     destructor Destroy; override;
@@ -167,7 +167,7 @@ begin
   Result := false;
 end;
 
-procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const);
+procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte);
 var
   frame: PCallFrame;
   func: PObjFunction;
@@ -177,6 +177,8 @@ begin
   printf(Fmt, vars, True);
   print(NL, true);
 
+  if local_ip <> nil then
+    frames[frameCount - 1].ip := local_ip;
   for i := frameCount - 1 downto 0 do
   begin
     frame := @frames[i];
@@ -253,6 +255,7 @@ end;
 function TLoxVM.run: InterpretResult;
 var
   instruction: OpCode;
+  local_ip: PByte;
   frame: PCallFrame;
   valA, valB: TValue;
   pval: PValue;
@@ -262,20 +265,20 @@ var
 
   function READ_BYTE: Byte; inline;
   begin
-    Result := frame^.ip^;
-    Inc(frame^.ip);
+    Result := local_ip^;
+    Inc(local_ip);
   end;
 
   function READ_Code: OpCode; inline;
   begin
-    Result := OpCode(frame^.ip^);
-    Inc(frame^.ip);
+    Result := OpCode(local_ip^);
+    Inc(local_ip);
   end;
 
   function READ_SHORT: Word; inline;
   begin
-    Result := (frame^.ip[0] shl 8) or frame^.ip[1];
-    Inc(frame^.ip, 2);
+    Result := (local_ip[0] shl 8) or local_ip[1];
+    Inc(local_ip, 2);
   end;
 
   function READ_CONSTANT: TValue;
@@ -297,7 +300,7 @@ var
   begin
     if not (IS_NUMBER(peek(0)^) and IS_NUMBER(peek(1)^)) then
     begin
-      runtimeError('Operands must be numbers.',[]);
+      runtimeError('Operands must be numbers.',[], local_ip);
       Exit(false);
     end;
     b := pop().as_number; // order matters
@@ -344,13 +347,14 @@ var
       inc(slot);
     end;
     print(NL);
-    disassembleInstruction(frame^.func^.chunk, PtrUInt(frame^.ip - frame^.func^.chunk.code));
+    disassembleInstruction(frame^.func^.chunk, PtrUInt(local_ip - frame^.func^.chunk.code));
   end;
   {$endif}
 
 begin
   halted := false;
   frame := @frames[frameCount - 1];
+  local_ip := frame^.ip;
   while True do
   begin
     {$ifdef DEBUG_TRACE_EXECUTION}
@@ -378,27 +382,29 @@ begin
       end;
       OP_JUMP: begin
         offset := READ_SHORT();
-        inc(frame^.ip, offset);
+        inc(local_ip, offset);
       end;
       OP_JUMP_IF_FALSE: begin
         offset := READ_SHORT();
         if isFalsey(peek(0)^) then
-          inc(frame^.ip, offset);
+          inc(local_ip, offset);
       end;
       OP_JUMP_IF_FALSE_POP: begin
         offset := READ_SHORT();
         if isFalsey(pop()) then
-          inc(frame^.ip, offset);
+          inc(local_ip, offset);
       end;
       OP_LOOP: begin
         offset := READ_SHORT;
-        Dec(frame^.ip, offset);
+        Dec(local_ip, offset);
       end;
       OP_CALL: begin
         tmpByte := READ_BYTE(); // argCount
+        frame^.ip := local_ip;
         if not callValue(peek(tmpByte)^, tmpByte) then
           Exit(INTERPRET_RUNTIME_ERROR);
         frame := @frames[frameCount - 1];
+        local_ip := frame^.ip;
       end;
       OP_RETURN: begin
         valA := pop();
@@ -412,6 +418,7 @@ begin
         stackTop := frame^.slots;
         push(valA);
         frame := @frames[frameCount - 1];
+        local_ip := frame^.ip;
       end;
       OP_CONSTANT: begin
         valA := READ_CONSTANT;
@@ -445,7 +452,7 @@ begin
         begin
           // so no need for deletion
           // but is it faster this way?
-          runtimeError('Undefined variable "%s".',[name^.chars]);
+          runtimeError('Undefined variable "%s".',[name^.chars], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
       end;
@@ -457,7 +464,7 @@ begin
           name := AS_STRING(READ_CONSTANT_LONG);
         if not globals.tableGet(name, valA) then
         begin
-          runtimeError('Undefined variable "%s".',[name^.chars]);
+          runtimeError('Undefined variable "%s".',[name^.chars], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
         push(valA);
@@ -478,7 +485,7 @@ begin
         pval := peek(0);
         if not IS_NUMBER(pval^) then
         begin
-          runtimeError('Operand must be a number.',[]);
+          runtimeError('Operand must be a number.',[], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
         pval^.as_number := -(pval^.as_number);
@@ -501,7 +508,7 @@ begin
           push(NUMBER_VAL(valA.as_number + valB.as_number));
         end
         else begin
-          runtimeError('Operands must be two numbers or two strings.',[]);
+          runtimeError('Operands must be two numbers or two strings.',[], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
       end;
