@@ -69,6 +69,7 @@ end;
 procedure printObject(const V: TValue);
 begin
   case OBJ_TYPE(V) of
+    OBJ_NATIVE_FN,
     OBJ_FUNCTION: printFunction(AS_FUNCTION(V));
     OBJ_STRING: print(AS_CSTRING(V));
   end;

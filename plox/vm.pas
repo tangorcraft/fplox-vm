@@ -40,22 +40,46 @@ type
     frames: array[0..FRAMES_MAX] of TCallFrame;
     frameCount: Integer;
 
+    pause_callback: TMethod;
+    halted: Boolean;
+
     procedure resetStack;
     procedure push(const V: TValue);
     function pop: TValue;
+    procedure popN(const N: Integer);
     function peek(const distance: Integer): PValue;
     function call(const func: PObjFunction; const argCount: Integer): Boolean;
+    function callNative(const func: PObjFunction; const argCount: Integer): Boolean;
     function callValue(const callee: TValue; const argCount: Integer): Boolean;
     procedure runtimeError(const Fmt: string; vars: array of const);
   public
     constructor Create;
     destructor Destroy; override;
 
+    procedure defineNative(const name: string; const arity: integer; const func: TNativeFn);
+
     function interpret(const source: string): InterpretResult;
     function run(): InterpretResult;
+
+    procedure pause(const callback: TMethod);
+    function is_paused: boolean;
+    procedure stop;
   end;
 
 implementation
+
+const
+   HoursPerDay = 24;
+   MinsPerHour = 60;
+   SecsPerMin  = 60;
+
+   MinsPerDay  = HoursPerDay * MinsPerHour;
+   SecsPerDay  = MinsPerDay * SecsPerMin;
+
+procedure clockNative(const args: PValue; const argCount: Integer; var result: TValue);
+begin
+  result := NUMBER_VAL(Time() * SecsPerDay);
+end;
 
 { TLoxVM }
 
@@ -75,6 +99,11 @@ function TLoxVM.pop: TValue;
 begin
   dec(stackTop);
   Result := stackTop^;
+end;
+
+procedure TLoxVM.popN(const N: Integer);
+begin
+  dec(stackTop, N);
 end;
 
 function TLoxVM.peek(const distance: Integer): PValue;
@@ -106,12 +135,33 @@ begin
   Result := True;
 end;
 
+function TLoxVM.callNative(const func: PObjFunction; const argCount: Integer): Boolean;
+var
+  retVal: TValue;
+begin
+  // can set arity to -1 for native function to accept any number of arguments
+  // since native function can't access VM object, it can't generate lox runtime errors
+  if (func^.arity <> -1) and (argCount <> func^.arity) then
+  begin
+    runtimeError('Expected %d arguments but got %d.', [func^.arity, argCount]);
+    Exit(false);
+  end;
+
+  retVal := NIL_VAL;
+  func^.nativeFn(stackTop - argCount, argCount, retVal);
+  dec(stackTop, argCount + 1);
+  push(retVal);
+  Result := True;
+end;
+
 function TLoxVM.callValue(const callee: TValue; const argCount: Integer): Boolean;
 begin
   if IS_OBJ(callee) then
     case OBJ_TYPE(callee) of
       OBJ_FUNCTION:
         Exit(call(AS_FUNCTION(callee), argCount));
+      OBJ_NATIVE_FN:
+        Exit(callNative(AS_FUNCTION(callee), argCount));
     end;
   runtimeError('Can only call functions and classes.', []);
   Result := false;
@@ -148,6 +198,8 @@ begin
   resetStack;
   objs := TObjectManager_Fun.Create;
   globals := THashTable.Create(objs);
+
+  defineNative('clock', 0, @clockNative);
 end;
 
 destructor TLoxVM.Destroy;
@@ -155,6 +207,16 @@ begin
   globals.Free;
   objs.Free;
   inherited Destroy;
+end;
+
+procedure TLoxVM.defineNative(const name: string; const arity: integer; const func: TNativeFn);
+begin
+  push(OBJ_VAL(objs.copyString(PChar(name), length(name))));
+  push(OBJ_VAL(objs.newNative(func)));
+  AS_FUNCTION(stack[1])^.arity := arity;
+  AS_FUNCTION(stack[1])^.name := AS_STRING(stack[0]);
+  globals.tableSet(AS_STRING(stack[0]), stack[1]);
+  popN(2);
 end;
 
 function TLoxVM.interpret(const source: string): InterpretResult;
@@ -270,6 +332,7 @@ var
   {$endif}
 
 begin
+  halted := false;
   frame := @frames[frameCount - 1];
   while True do
   begin
@@ -277,6 +340,17 @@ begin
     if debugTraceExecution then
       debug_trace;
     {$endif}
+
+    if halted then
+      Exit(INTERPRET_HALT);
+    while Assigned(pause_callback) do
+    begin
+      pause_callback();
+      if halted then
+        Exit(INTERPRET_HALT);
+      sleep(1);
+    end;
+
     instruction := READ_Code;
     case instruction of
       OP_HALT:
@@ -420,6 +494,21 @@ begin
         if not BINARY_NUM_OP() then Exit(INTERPRET_RUNTIME_ERROR);
     end;
   end;
+end;
+
+procedure TLoxVM.pause(const callback: TMethod);
+begin
+  pause_callback := callback;
+end;
+
+function TLoxVM.is_paused: boolean;
+begin
+  Result := Assigned(pause_callback);
+end;
+
+procedure TLoxVM.stop;
+begin
+  halted := true;
 end;
 
 end.

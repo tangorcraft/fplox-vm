@@ -67,11 +67,14 @@ type
     procedure writeConstant(const V: TValue; const line: Integer);
   end;
 
+  TNativeFn = procedure (const args: PValue; const argCount: Integer; var result: TValue);
   TObjFunction = record
     obj: TLoxObj;
     arity: Integer;
-    chunk: TChunk;
     name: PObjString;
+    case Byte of
+    0: (chunk: TChunk);
+    1: (nativeFn: TNativeFn);
   end;
   PObjFunction = ^TObjFunction;
 
@@ -80,9 +83,11 @@ type
   TObjectManager_Fun = class(TObjectManager_SI)
   public
     function newFunction(): PObjFunction;
+    function newNative(const fn: TNativeFn): PObjFunction;
   end;
 
 function IS_FUNCTION(const V: TValue): Boolean;
+function IS_NATIVE_FN(const V: TValue): Boolean;
 function AS_FUNCTION(const V: TValue): PObjFunction;
 procedure printFunction(const V: PObjFunction);
 
@@ -91,6 +96,11 @@ implementation
 function IS_FUNCTION(const V: TValue): Boolean;
 begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_FUNCTION);
+end;
+
+function IS_NATIVE_FN(const V: TValue): Boolean;
+begin
+  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_NATIVE_FN);
 end;
 
 function AS_FUNCTION(const V: TValue): PObjFunction;
@@ -102,6 +112,8 @@ procedure printFunction(const V: PObjFunction);
 begin
   if V^.name = nil then
     print('<script>')
+  else if V^.obj.type_ = OBJ_NATIVE_FN then
+    printf('<nativeFn %s>', [V^.name^.chars])
   else
     printf('<fn %s>', [V^.name^.chars]);
 end;
@@ -176,6 +188,14 @@ begin
   Result^.arity := 0;
   Result^.name := nil;
   Result^.chunk := TChunk.Create(self);
+end;
+
+function TObjectManager_Fun.newNative(const fn: TNativeFn): PObjFunction;
+begin
+  Result := allocateObject(sizeof(TObjFunction), OBJ_NATIVE_FN);
+  Result^.arity := 0;
+  Result^.name := nil;
+  Result^.nativeFn := fn;
 end;
 
 end.

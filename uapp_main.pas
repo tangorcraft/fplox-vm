@@ -16,6 +16,8 @@ type
   TFMain = class(TForm)
     BRunLox: TButton;
     BClearConsole: TButton;
+    BRunPause: TButton;
+    BRunStop: TButton;
     cbDebugPrintCode: TCheckBox;
     cbDebugTraceExecution: TCheckBox;
     GroupBoxDebug: TGroupBox;
@@ -27,17 +29,22 @@ type
     Splitter1: TSplitter;
     procedure BClearConsoleClick(Sender: TObject);
     procedure BRunLoxClick(Sender: TObject);
+    procedure BRunPauseClick(Sender: TObject);
+    procedure BRunStopClick(Sender: TObject);
     procedure cbDebugPrintCodeChange(Sender: TObject);
     procedure cbDebugTraceExecutionChange(Sender: TObject);
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
   private
     FTests: TStringList;
+    FLox: TLoxEngine;
     procedure menuTestClick(Sender: TObject);
 
     procedure lox_string(const S: string);
 
     procedure findTest(const path: string; const root: TMenuItem);
+    procedure runUIState(const running: Boolean);
   public
 
   end;
@@ -59,6 +66,7 @@ var
 begin
   lox_output := @lox_string;
   lox_error := @lox_string;
+  FLox := nil;
 
   {$ifndef DEBUG}
   GroupBoxDebug.Enabled := False;
@@ -88,17 +96,37 @@ end;
 
 procedure TFMain.BRunLoxClick(Sender: TObject);
 var
-  lox: TLoxEngine;
   ret: integer;
 begin
-  lox := TLoxEngine.Create();
   MemoConsole.Lines.Add('Lox Interpreter started');
+  runUIState(true);
+  Application.ProcessMessages;
+  FLox := TLoxEngine.Create();
   try
-    ret := lox.Execute(MemoLox.Text);
+    ret := FLox.Execute(MemoLox.Text);
   finally
-    lox.Free;
+    FLox.Free;
+    FLox := nil;
+    runUIState(false);
   end;
   MemoConsole.Lines.Add('Lox Interpreter finished execution with code %d',[ret]);
+end;
+
+procedure TFMain.BRunPauseClick(Sender: TObject);
+begin
+  if Assigned(FLox) then
+  begin
+    if FLox.LoxVM.is_paused then
+      FLox.LoxVM.pause(nil)
+    else
+      FLox.LoxVM.pause(@Application.ProcessMessages);
+  end;
+end;
+
+procedure TFMain.BRunStopClick(Sender: TObject);
+begin
+  if Assigned(FLox) then
+    FLox.LoxVM.stop;
 end;
 
 procedure TFMain.cbDebugPrintCodeChange(Sender: TObject);
@@ -113,6 +141,13 @@ begin
   {$ifdef DEBUG}
   debugTraceExecution := cbDebugTraceExecution.Checked;
   {$endif}
+end;
+
+procedure TFMain.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  CanClose := True;
+  if Assigned(FLox) and FLox.LoxVM.is_paused then
+    FLox.LoxVM.stop;
 end;
 
 procedure TFMain.BClearConsoleClick(Sender: TObject);
@@ -141,6 +176,7 @@ end;
 procedure TFMain.lox_string(const S: string);
 begin
   MemoConsole.Lines.Add(S);
+  Application.ProcessMessages;
 end;
 
 procedure TFMain.findTest(const path: string; const root: TMenuItem);
@@ -176,6 +212,15 @@ begin
     end;
   until FindNext(sr) <> 0;
   FindClose(sr);
+end;
+
+procedure TFMain.runUIState(const running: Boolean);
+begin
+  MemoLox.Enabled := not running;
+  BClearConsole.Enabled := not running;
+  BRunLox.Enabled := not running;
+  BRunPause.Enabled := running;
+  BRunStop.Enabled := running;
 end;
 
 end.

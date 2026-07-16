@@ -8,6 +8,7 @@ object FMain: TFMain
   ClientWidth = 1267
   Menu = MainMenu
   LCLVersion = '4.6.0.0'
+  OnCloseQuery = FormCloseQuery
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   object MemoLox: TMemo
@@ -79,6 +80,26 @@ object FMain: TFMain
         Caption = 'Trace Execution'
         TabOrder = 1
         OnChange = cbDebugTraceExecutionChange
+      end
+      object BRunPause: TButton
+        Left = 8
+        Height = 25
+        Top = 64
+        Width = 123
+        Caption = 'Pause/UnPause'
+        Enabled = False
+        TabOrder = 2
+        OnClick = BRunPauseClick
+      end
+      object BRunStop: TButton
+        Left = 8
+        Height = 25
+        Top = 100
+        Width = 121
+        Caption = 'Stop'
+        Enabled = False
+        TabOrder = 3
+        OnClick = BRunStopClick
       end
     end
   end

@@ -20,6 +20,7 @@ type
     destructor Destroy; override;
 
     function Execute(const source: string): Integer;
+    property LoxVM: TLoxVM read VM;
   end;
 
 implementation

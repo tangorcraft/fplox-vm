@@ -9,6 +9,7 @@ uses
   Classes, SysUtils, Math;
 
 type
+  TMethod = procedure of object;
   TStringMethod = procedure (const S: string) of object;
 
 var
