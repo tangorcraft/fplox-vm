@@ -74,8 +74,10 @@ procedure printObject(const V: TValue);
 begin
   case OBJ_TYPE(V) of
     OBJ_NATIVE_FN,
+    OBJ_CLOSURE,
     OBJ_FUNCTION: printFunction(AS_FUNCTION(V));
-    OBJ_STRING: print(AS_CSTRING(V));
+    OBJ_UPVALUE: print('upvalue');
+    OBJ_STRING: printf('"%s"',[AS_CSTRING(V)]);
   end;
 end;
 
@@ -93,8 +95,12 @@ end;
 procedure freeObject(const O: PLoxObj);
 begin
   case O^.type_ of
-    OBJ_FUNCTION: begin
-      PObjFunction(O)^.chunk.Free;
+    OBJ_CHUNK: begin
+      PObjChunk(O)^.chunk.Free;
+    end;
+    OBJ_CLOSURE: begin
+      with PObjClosure(O)^ do
+        FREE_ARRAY(upvalues, upvalueCount, sizeof(PObjUpvalue));
     end;
     OBJ_STRING: begin
       with PObjString(O)^ do

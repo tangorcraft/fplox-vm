@@ -4,11 +4,11 @@ begin
     runtimeError('Operands must be numbers.',[], local_ip);
     Exit(INTERPRET_RUNTIME_ERROR);
   end;
-  tmpDouble := pop().as_number; // order matters
+  temp.D := pop().as_number; // order matters
   push( MACRO_VAL (
     pop().as_number // a
     MACRO_OP
-    tmpDouble // b
+    temp.D // b
   ));
 end;
 

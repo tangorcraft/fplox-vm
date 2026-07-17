@@ -55,6 +55,12 @@ type
     TYPE_SCRIPT
   );
 
+  TUpValue = record
+    index: Byte;
+    isLocal: Boolean;
+  end;
+  PUpValue = ^TUpValue;
+
   PCompilerState = ^TCompilerState;
   TCompilerState = record
     enclosing: PCompilerState;
@@ -63,6 +69,7 @@ type
 
     locals: array[Byte] of TLocal;
     localCount: Integer;
+    upvalues: array[Byte] of TUpValue;
     scopeDepth: Integer;
   end;
 
@@ -111,6 +118,10 @@ type
     function parseVariable(const msg: PChar): Integer;
     procedure defineVariable(const global: Integer);
     function resolveLocal(const compiler: PCompilerState; const name: TToken): integer;
+    function addUpvalue(const compiler: PCompilerState; const index: Byte;
+      const isLocal: Boolean): Integer;
+    function resolveUpvalue(const compiler: PCompilerState; const name: TToken;
+      var arg: Integer): boolean;
     procedure namedVariable(const name: TToken; const canAssign: Boolean);
     function argumentList(): Byte;
 
@@ -533,6 +544,57 @@ begin
   Result := -1;
 end;
 
+function TCompiler.addUpvalue(const compiler: PCompilerState; const index: Byte;
+  const isLocal: Boolean): Integer;
+var
+  i: integer;
+  upval: PUpValue;
+begin
+  Result := compiler^.func^.upvalueCount;
+
+  for i := 0 to Result - 1 do
+  begin
+    upval := @compiler^.upvalues[i];
+    if (upval^.index = index) and (upval^.isLocal = isLocal) then
+      Exit(i);
+  end;
+
+  if Result = UINT8_COUNT then
+  begin
+    error('Too many closure variables in function.');
+    Exit(0);
+  end;
+
+  compiler^.upvalues[Result].isLocal := isLocal;
+  compiler^.upvalues[Result].index := index;
+  inc(compiler^.func^.upvalueCount);
+end;
+
+function TCompiler.resolveUpvalue(const compiler: PCompilerState; const name: TToken;
+  var arg: Integer): boolean;
+var
+  local, upvalue: Integer;
+begin
+  if compiler^.enclosing = nil then
+    Exit(false);
+
+  local := resolveLocal(compiler^.enclosing, name);
+  if local <> -1 then
+  begin
+    arg := addUpvalue(compiler, Byte(local), true);
+    Exit(true);
+  end;
+
+  upvalue := -1;
+  if resolveUpvalue(compiler^.enclosing, name, upvalue) then
+  begin
+    arg := addUpvalue(compiler, Byte(upvalue), false);
+    Exit(true);
+  end;
+
+  Result := false;
+end;
+
 procedure TCompiler.namedVariable(const name: TToken; const canAssign: Boolean);
 var
   arg: Integer;
@@ -543,6 +605,12 @@ begin
   begin
     getOp := OP_GET_LOCAL;
     setOp := OP_SET_LOCAL;
+  end
+  else
+  if resolveUpvalue(current, name, arg) then
+  begin
+    getOp := OP_GET_UPVALUE;
+    setOp := OP_SET_UPVALUE;
   end
   else
   begin
@@ -749,7 +817,7 @@ procedure TCompiler.function_(const type_: TFunctionType);
 var
   compiler: TCompilerState;
   func: PObjFunction;
-  constant: Integer;
+  constant, i: Integer;
 begin
   initCompiler(@compiler, type_);
   beginScope();
@@ -768,7 +836,16 @@ begin
   block();
 
   func := endCompiler();
-  emitConstant(OBJ_VAL(func));
+  emitCodeVar(OP_CLOSURE, OP_CLOSURE_LONG, makeConstant(OBJ_VAL(func)));
+
+  for i := 0 to func^.upvalueCount - 1 do
+  begin
+    if compiler.upvalues[i].isLocal then
+      emitByte(1)
+    else
+      emitByte(0);
+    emitByte(compiler.upvalues[i].index);
+  end;
 end;
 
 procedure TCompiler.funDeclaration();

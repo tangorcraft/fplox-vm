@@ -59,6 +59,39 @@ begin
   print(NL);
 end;
 
+function closureInstruction(const op: OpCode; const C: TChunk; const offset: integer): Integer;
+var
+  constant, i: integer;
+  name: string;
+  func: PObjFunction;
+  isLocal, index: integer;
+begin
+  Str(op, name);
+  Result := offset + 1;
+  constant := C.code[Result];
+  inc(Result);
+  if op = OP_CLOSURE_LONG then
+  begin
+    constant := (constant shl 16) + (C.code[Result] shl 8) + C.code[Result + 1];
+    inc(Result, 2);
+  end;
+  print_constant(name, constant, C.constants.values[constant]);
+  func := AS_FUNCTION(C.constants.values[constant]);
+  for i := 0 to func^.upvalueCount - 1 do
+  begin
+    isLocal := C.code[Result];
+    inc(Result);
+    index := C.code[Result];
+    inc(Result);
+    if isLocal = 0 then
+      printf('%.4d      |                     upvalue %d'+NL,
+             [Result - 2, index])
+    else
+      printf('%.4d      |                     local %d'+NL,
+             [Result - 2, index]);
+  end;
+end;
+
 function constantIntsruction(const op: OpCode; const C: TChunk; const offset: integer): integer;
 var
   constant: Byte;
@@ -135,6 +168,8 @@ begin
     OP_DEFINE_GLOBAL_LONG:
       Result := constantLongIntsruction(instruction, C, offset);
     OP_CALL,
+    OP_SET_UPVALUE,
+    OP_GET_UPVALUE,
     OP_SET_LOCAL,
     OP_GET_LOCAL:
       Result := byteIntsruction(instruction, C, offset);
@@ -144,6 +179,9 @@ begin
       Result := jumpIntsruction(instruction, 1, C, offset);
     OP_LOOP:
       Result := jumpIntsruction(instruction, -1, C, offset);
+    OP_CLOSURE,
+    OP_CLOSURE_LONG:
+      Result := closureInstruction(instruction, C, offset);
 
   else
     begin

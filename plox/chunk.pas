@@ -17,6 +17,8 @@ type
     OP_JUMP_IF_FALSE_POP,
     OP_LOOP,
     OP_CALL,
+    OP_CLOSURE,
+    OP_CLOSURE_LONG,
     OP_RETURN,
     OP_CONSTANT,
     OP_CONSTANT_LONG,
@@ -26,6 +28,8 @@ type
     OP_POP,
     OP_SET_LOCAL,
     OP_GET_LOCAL,
+    OP_SET_UPVALUE,
+    OP_GET_UPVALUE,
     OP_SET_GLOBAL,
     OP_SET_GLOBAL_LONG,
     OP_GET_GLOBAL,
@@ -71,6 +75,7 @@ type
   TObjFunction = record
     obj: TLoxObj;
     arity: Integer;
+    upvalueCount: integer;
     name: PObjString;
     case Byte of
     0: (chunk: TChunk);
@@ -78,19 +83,47 @@ type
   end;
   PObjFunction = ^TObjFunction;
 
+  TObjUpvalue = record
+    obj: TLoxObj;
+    location: PValue;
+  end;
+  PObjUpvalue = ^TObjUpvalue;
+  PPObjUpvalue = ^PObjUpvalue;
+
+  // this way ObjClosure can be safely passed to anything that expect ObjFunction
+  // no much  memory overhead since chunk is not a record that is allocated in ObjFunction, but a separate object
+  TObjClosure = record
+    func: TObjFunction;
+    upvalues: PPObjUpvalue;
+    upvalueCount: Integer;
+  end;
+  PObjClosure = ^TObjClosure;
+
+  TObjChunk = record
+    obj: TLoxObj;
+    chunk: TChunk;
+  end;
+  PObjChunk = ^TObjChunk;
+
   { TObjectManager_Fun }
 
   TObjectManager_Fun = class(TObjectManager_SI)
+  private
+    function newChunk(): TChunk;
   public
     function newFunction(): PObjFunction;
+    function newClosure(const fn: TObjFunction): PObjClosure;
     function newNative(const fn: TNativeFn): PObjFunction;
+    function newUpvalue(const slot: PValue): PObjUpvalue;
   end;
 
 {$inline on}
 
 function IS_FUNCTION(const V: TValue): Boolean; inline;
+function IS_CLOSURE(const V: TValue): Boolean; inline;
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
+function AS_CLOSURE(const V: TValue): PObjClosure; inline;
 procedure printFunction(const V: PObjFunction);
 
 implementation
@@ -98,6 +131,11 @@ implementation
 function IS_FUNCTION(const V: TValue): Boolean; inline;
 begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_FUNCTION);
+end;
+
+function IS_CLOSURE(const V: TValue): Boolean;
+begin
+  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_CLOSURE);
 end;
 
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
@@ -110,7 +148,10 @@ begin
   Result := PObjFunction(V.as_obj);
 end;
 
-{$inline off}
+function AS_CLOSURE(const V: TValue): PObjClosure;
+begin
+  Result := PObjClosure(V.as_obj);
+end;
 
 procedure printFunction(const V: PObjFunction);
 begin
@@ -186,12 +227,37 @@ end;
 
 { TObjectManager_Fun }
 
+function TObjectManager_Fun.newChunk(): TChunk;
+var
+  obj: PObjChunk;
+begin
+  Result := TChunk.Create(self);
+  obj := allocateObject(sizeof(TObjChunk), OBJ_CHUNK);
+  obj^.chunk := Result;
+end;
+
 function TObjectManager_Fun.newFunction(): PObjFunction;
 begin
   Result := allocateObject(sizeof(TObjFunction), OBJ_FUNCTION);
   Result^.arity := 0;
+  Result^.upvalueCount := 0;
   Result^.name := nil;
-  Result^.chunk := TChunk.Create(self);
+  Result^.chunk := newChunk();
+end;
+
+function TObjectManager_Fun.newClosure(const fn: TObjFunction): PObjClosure;
+var
+  obj: TLoxObj;
+  upvalues: PPObjUpvalue;
+begin
+  upvalues := ALLOC_AND_ZERO_ARRAY(fn.upvalueCount, sizeof(PObjUpvalue));
+
+  Result := allocateObject(sizeof(TObjClosure), OBJ_CLOSURE);
+  obj := Result^.func.obj; // make sure fn will not overwrite TLoxObj header of closure object
+  Result^.func := fn;
+  Result^.func.obj := obj;
+  Result^.upvalues := upvalues;
+  Result^.upvalueCount := fn.upvalueCount;
 end;
 
 function TObjectManager_Fun.newNative(const fn: TNativeFn): PObjFunction;
@@ -200,6 +266,12 @@ begin
   Result^.arity := 0;
   Result^.name := nil;
   Result^.nativeFn := fn;
+end;
+
+function TObjectManager_Fun.newUpvalue(const slot: PValue): PObjUpvalue;
+begin
+  Result := allocateObject(sizeof(TObjUpvalue), OBJ_UPVALUE);
+  Result^.location := slot;
 end;
 
 end.

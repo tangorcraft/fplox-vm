@@ -23,7 +23,7 @@ type
   );
 
   TCallFrame = record
-    func: PObjFunction;
+    closure: PObjClosure;
     ip: PByte;
     slots: PValue;
   end;
@@ -48,9 +48,10 @@ type
     function pop: TValue;
     procedure popN(const N: Integer);
     function peek(const distance: Integer): PValue;
-    function call(const func: PObjFunction; const argCount: Integer): Boolean;
+    function call(const closure: PObjClosure; const argCount: Integer): Boolean;
     function callNative(const func: PObjFunction; const argCount: Integer): Boolean;
     function callValue(const callee: TValue; const argCount: Integer): Boolean;
+    function captureUpvalue(const local: PValue): PObjUpvalue;
     procedure runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte = nil);
   public
     constructor Create;
@@ -111,13 +112,13 @@ begin
   Result := stackTop - 1 - distance;
 end;
 
-function TLoxVM.call(const func: PObjFunction; const argCount: Integer): Boolean;
+function TLoxVM.call(const closure: PObjClosure; const argCount: Integer): Boolean;
 var
   frame: PCallFrame;
 begin
-  if argCount <> func^.arity then
+  if argCount <> closure^.func.arity then
   begin
-    runtimeError('Expected %d arguments but got %d.', [func^.arity, argCount]);
+    runtimeError('Expected %d arguments but got %d.', [closure^.func.arity, argCount]);
     Exit(false);
   end;
 
@@ -129,8 +130,8 @@ begin
 
   frame := @frames[frameCount];
   inc(frameCount);
-  frame^.func := func;
-  frame^.ip := func^.chunk.code;
+  frame^.closure := closure;
+  frame^.ip := closure^.func.chunk.code;
   frame^.slots := stackTop - argCount - 1;
   Result := True;
 end;
@@ -158,13 +159,18 @@ function TLoxVM.callValue(const callee: TValue; const argCount: Integer): Boolea
 begin
   if IS_OBJ(callee) then
     case OBJ_TYPE(callee) of
-      OBJ_FUNCTION:
-        Exit(call(AS_FUNCTION(callee), argCount));
+      OBJ_CLOSURE:
+        Exit(call(AS_CLOSURE(callee), argCount));
       OBJ_NATIVE_FN:
         Exit(callNative(AS_FUNCTION(callee), argCount));
     end;
   runtimeError('Can only call functions and classes.', []);
   Result := false;
+end;
+
+function TLoxVM.captureUpvalue(const local: PValue): PObjUpvalue;
+begin
+  Result := objs.newUpvalue(local);
 end;
 
 procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte);
@@ -182,8 +188,8 @@ begin
   for i := frameCount - 1 downto 0 do
   begin
     frame := @frames[i];
-    func := frame^.func;
-    instruction := SizeInt(frame^.ip - frame^.func^.chunk.code) - 1;
+    func := @frame^.closure^.func;
+    instruction := SizeInt(frame^.ip - func^.chunk.code) - 1;
     line := func^.chunk.lines[instruction];
     printf('[line %d] in ', [line], true);
     if func^.name = nil then
@@ -239,18 +245,36 @@ end;
 function TLoxVM.interpret(const source: string): InterpretResult;
 var
   func: PObjFunction;
+  closure: PObjClosure;
 begin
   func := compile(source, objs);
   if func = nil then
     Exit(INTERPRET_COMPILE_ERROR);
 
   push(OBJ_VAL(func));
-  call(func, 0);
+  closure := objs.newClosure(func^);
+  pop();
+  push(OBJ_VAL(closure));
+  call(closure, 0);
 
   Result := run();
 end;
 
 {$inline on}
+
+type
+  TTempUnion = record
+    case Byte of
+    0: (name: PObjString);
+    1: (chunk: PObjChunk);
+    2: (closure: PObjClosure);
+    3: (func: PObjFunction);
+    4: (B: byte);
+    5: (W: word);
+    6: (D: double);
+    7: (pval: PValue);
+    //8: (val: TValue);
+  end;
 
 function TLoxVM.run: InterpretResult;
 var
@@ -258,11 +282,8 @@ var
   local_ip: PByte;
   frame: PCallFrame;
   valA, valB: TValue;
-  pval: PValue;
-  name: PObjString;
-  tmpByte: Byte;
-  tmpDouble: Double;
-  offset: Word;
+  temp: TTempUnion;
+  i: Integer;
 
   function READ_BYTE: Byte; inline;
   begin
@@ -284,7 +305,7 @@ var
 
   function READ_CONSTANT: TValue;
   begin
-    Result := frame^.func^.chunk.constants.values[READ_BYTE];
+    Result := frame^.closure^.func.chunk.constants.values[READ_BYTE];
   end;
 
   function READ_CONSTANT_LONG: TValue;
@@ -292,7 +313,7 @@ var
     index: integer;
   begin
     index := (READ_BYTE shl 16) or (READ_BYTE shl 8) or READ_BYTE;
-    Result := frame^.func^.chunk.constants.values[index];
+    Result := frame^.closure^.func.chunk.constants.values[index];
   end;
 
   procedure concatenate();
@@ -326,7 +347,7 @@ var
       inc(slot);
     end;
     print(NL);
-    disassembleInstruction(frame^.func^.chunk, PtrUInt(local_ip - frame^.func^.chunk.code));
+    disassembleInstruction(frame^.closure^.func.chunk, PtrUInt(local_ip - frame^.closure^.func.chunk.code));
   end;
   {$endif}
 
@@ -360,30 +381,46 @@ begin
         print(NL);
       end;
       OP_JUMP: begin
-        offset := READ_SHORT();
-        inc(local_ip, offset);
+        temp.W := READ_SHORT(); // offset
+        inc(local_ip, temp.W);
       end;
       OP_JUMP_IF_FALSE: begin
-        offset := READ_SHORT();
+        temp.W := READ_SHORT();
         if isFalsey(peek(0)^) then
-          inc(local_ip, offset);
+          inc(local_ip, temp.W);
       end;
       OP_JUMP_IF_FALSE_POP: begin
-        offset := READ_SHORT();
+        temp.W := READ_SHORT();
         if isFalsey(pop()) then
-          inc(local_ip, offset);
+          inc(local_ip, temp.W);
       end;
       OP_LOOP: begin
-        offset := READ_SHORT;
-        Dec(local_ip, offset);
+        temp.W := READ_SHORT;
+        Dec(local_ip, temp.W);
       end;
       OP_CALL: begin
-        tmpByte := READ_BYTE(); // argCount
+        temp.B := READ_BYTE(); // argCount
         frame^.ip := local_ip;
-        if not callValue(peek(tmpByte)^, tmpByte) then
+        if not callValue(peek(temp.B)^, temp.B) then
           Exit(INTERPRET_RUNTIME_ERROR);
         frame := @frames[frameCount - 1];
         local_ip := frame^.ip;
+      end;
+      OP_CLOSURE,
+      OP_CLOSURE_LONG: begin
+        if instruction = OP_CLOSURE then
+          temp.func := AS_FUNCTION(READ_CONSTANT)
+        else
+          temp.func := AS_FUNCTION(READ_CONSTANT_LONG);
+        temp.closure := objs.newClosure(temp.func^);
+        push(OBJ_VAL(temp.closure));
+        for i := 0 to temp.closure^.upvalueCount - 1 do
+        begin
+          if READ_BYTE() = 1 then // isLocal
+            temp.closure^.upvalues[i] := captureUpvalue(frame^.slots + READ_BYTE()) // index
+          else
+            temp.closure^.upvalues[i] := frame^.closure^.upvalues[READ_BYTE()]; // index
+        end;
       end;
       OP_RETURN: begin
         valA := pop();
@@ -412,62 +449,70 @@ begin
       OP_FALSE: push(BOOL_VAL(false));
       OP_POP: pop();
       OP_SET_LOCAL: begin
-        tmpByte := READ_BYTE; // slot
-        frame^.slots[tmpByte] := peek(0)^;
+        temp.B := READ_BYTE; // slot
+        frame^.slots[temp.B] := peek(0)^;
       end;
       OP_GET_LOCAL: begin
-        tmpByte := READ_BYTE; // slot
-        push(frame^.slots[tmpByte]);
+        temp.B := READ_BYTE; // slot
+        push(frame^.slots[temp.B]);
+      end;
+      OP_SET_UPVALUE: begin
+        temp.B := READ_BYTE; // slot
+        frame^.closure^.upvalues[temp.B]^.location^ := peek(0)^;
+      end;
+      OP_GET_UPVALUE: begin
+        temp.B := READ_BYTE; // slot
+        push(frame^.closure^.upvalues[temp.B]^.location^);
       end;
       OP_SET_GLOBAL,
       OP_SET_GLOBAL_LONG: begin
         if instruction = OP_SET_GLOBAL then
-          name := AS_STRING(READ_CONSTANT)
+          temp.name := AS_STRING(READ_CONSTANT)
         else
-          name := AS_STRING(READ_CONSTANT_LONG);
+          temp.name := AS_STRING(READ_CONSTANT_LONG);
         // tableSet return True if key is new, i.e. don't exist in hash table
         // no value is set then if mustExist is also True
-        if globals.tableSet(name, peek(0)^, true) then
+        if globals.tableSet(temp.name, peek(0)^, true) then
         begin
           // so no need for deletion
           // but is it faster this way?
-          runtimeError('Undefined variable "%s".',[name^.chars], local_ip);
+          runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
       end;
       OP_GET_GLOBAL,
       OP_GET_GLOBAL_LONG: begin
         if instruction = OP_GET_GLOBAL then
-          name := AS_STRING(READ_CONSTANT)
+          temp.name := AS_STRING(READ_CONSTANT)
         else
-          name := AS_STRING(READ_CONSTANT_LONG);
-        if not globals.tableGet(name, valA) then
+          temp.name := AS_STRING(READ_CONSTANT_LONG);
+        if not globals.tableGet(temp.name, valA) then
         begin
-          runtimeError('Undefined variable "%s".',[name^.chars], local_ip);
+          runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
         push(valA);
       end;
       OP_DEFINE_GLOBAL: begin
-        name := AS_STRING(READ_CONSTANT);
-        globals.tableSet(name, peek(0)^);
+        temp.name := AS_STRING(READ_CONSTANT);
+        globals.tableSet(temp.name, peek(0)^);
         pop();
       end;
       OP_DEFINE_GLOBAL_LONG: begin
-        name := AS_STRING(READ_CONSTANT_LONG);
-        globals.tableSet(name, peek(0)^);
+        temp.name := AS_STRING(READ_CONSTANT_LONG);
+        globals.tableSet(temp.name, peek(0)^);
         pop();
       end;
       OP_NOT:
         push(BOOL_VAL(isFalsey(pop())));
       OP_NEGATE: begin
-        pval := peek(0);
-        if not IS_NUMBER(pval^) then
+        temp.pval := peek(0);
+        if not IS_NUMBER(temp.pval^) then
         begin
           runtimeError('Operand must be a number.',[], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
-        pval^.as_number := -(pval^.as_number);
+        temp.pval^.as_number := -(temp.pval^.as_number);
       end;
       OP_EQUAL: begin
         valB := pop();

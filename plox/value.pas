@@ -19,8 +19,11 @@ type
   );
 
   ObjType = (
+    OBJ_CHUNK,
     OBJ_NATIVE_FN,
+    OBJ_CLOSURE,
     OBJ_FUNCTION,
+    OBJ_UPVALUE,
     OBJ_STRING
   );
 

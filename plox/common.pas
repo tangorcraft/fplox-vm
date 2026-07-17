@@ -54,7 +54,7 @@ var
   std: TOutput;
   stderr: TOutput;
 const
-  MAX_LINE = 120;
+  MAX_LINE = 160;
 
 procedure internal_print(const S: string);
 begin
