@@ -39,6 +39,7 @@ type
     globals: THashTable;
     frames: array[0..FRAMES_MAX] of TCallFrame;
     frameCount: Integer;
+    openUpvalues: PObjUpvalue;
 
     pause_callback: TMethod;
     halted: Boolean;
@@ -52,6 +53,7 @@ type
     function callNative(const func: PObjFunction; const argCount: Integer): Boolean;
     function callValue(const callee: TValue; const argCount: Integer): Boolean;
     function captureUpvalue(const local: PValue): PObjUpvalue;
+    procedure closeUpvalues(const last: PValue);
     procedure runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte = nil);
   public
     constructor Create;
@@ -169,8 +171,40 @@ begin
 end;
 
 function TLoxVM.captureUpvalue(const local: PValue): PObjUpvalue;
+var
+  prevUpvalue, upvalue: PObjUpvalue;
 begin
+  prevUpvalue := nil;
+  upvalue := openUpvalues;
+  while (upvalue <> nil) and (upvalue^.location > local) do
+  begin
+    prevUpvalue := upvalue;
+    upvalue := upvalue^.next;
+  end;
+
+  if (upvalue <> nil) and (upvalue^.location = local) then
+    Exit(upvalue);
+
   Result := objs.newUpvalue(local);
+  Result^.next := upvalue;
+
+  if prevUpvalue = nil then
+    openUpvalues := Result
+  else
+    prevUpvalue^.next := Result;
+end;
+
+procedure TLoxVM.closeUpvalues(const last: PValue);
+var
+  upvalue: PObjUpvalue;
+begin
+  while (openUpvalues <> nil) and (openUpvalues^.location >= last) do
+  begin
+    upvalue := openUpvalues;
+    upvalue^.closed := upvalue^.location^;
+    upvalue^.location := @upvalue^.closed;
+    openUpvalues := upvalue^.next;
+  end;
 end;
 
 procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte);
@@ -206,6 +240,7 @@ begin
   resetStack;
   objs := TObjectManager_Fun.Create;
   globals := THashTable.Create(objs);
+  openUpvalues := nil;
 
   defineNative('clock', 0, @clockNative);
 end;
@@ -422,8 +457,13 @@ begin
             temp.closure^.upvalues[i] := frame^.closure^.upvalues[READ_BYTE()]; // index
         end;
       end;
+      OP_CLOSE_UPVALUE: begin
+        closeUpvalues(stackTop - 1);
+        pop();
+      end;
       OP_RETURN: begin
-        valA := pop();
+        valA := pop(); // result
+        closeUpvalues(frame^.slots);
         dec(frameCount);
         if frameCount = 0 then
         begin
@@ -432,7 +472,7 @@ begin
         end;
 
         stackTop := frame^.slots;
-        push(valA);
+        push(valA); // result
         frame := @frames[frameCount - 1];
         local_ip := frame^.ip;
       end;

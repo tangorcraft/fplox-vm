@@ -155,6 +155,7 @@ begin
     OP_NIL,
     OP_TRUE,
     OP_FALSE,
+    OP_CLOSE_UPVALUE,
     OP_POP:
       Result := simpleIntsruction(instruction, offset);
     OP_CONSTANT,

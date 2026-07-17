@@ -19,6 +19,7 @@ type
     OP_CALL,
     OP_CLOSURE,
     OP_CLOSURE_LONG,
+    OP_CLOSE_UPVALUE,
     OP_RETURN,
     OP_CONSTANT,
     OP_CONSTANT_LONG,
@@ -83,11 +84,13 @@ type
   end;
   PObjFunction = ^TObjFunction;
 
+  PObjUpvalue = ^TObjUpvalue;
   TObjUpvalue = record
     obj: TLoxObj;
     location: PValue;
+    closed: TValue;
+    next: PObjUpvalue;
   end;
-  PObjUpvalue = ^TObjUpvalue;
   PPObjUpvalue = ^PObjUpvalue;
 
   // this way ObjClosure can be safely passed to anything that expect ObjFunction
@@ -272,6 +275,8 @@ function TObjectManager_Fun.newUpvalue(const slot: PValue): PObjUpvalue;
 begin
   Result := allocateObject(sizeof(TObjUpvalue), OBJ_UPVALUE);
   Result^.location := slot;
+  Result^.closed := NIL_VAL;
+  Result^.next := nil;
 end;
 
 end.

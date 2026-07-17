@@ -47,6 +47,7 @@ type
   TLocal = record
     name: TToken;
     depth: Integer;
+    isCaptured: Boolean;
   end;
   PLocal = ^TLocal;
 
@@ -400,6 +401,7 @@ begin
   local := @current^.locals[current^.localCount];
   inc(current^.localCount);
   local^.depth := 0;
+  local^.isCaptured := false;
   local^.name.start := '';
   local^.name.length := 0;
 end;
@@ -471,6 +473,7 @@ begin
   inc(current^.localCount);
   local^.name := name;
   local^.depth := -1;
+  local^.isCaptured := false;
 end;
 
 procedure TCompiler.markInitialized();
@@ -580,6 +583,7 @@ begin
   local := resolveLocal(compiler^.enclosing, name);
   if local <> -1 then
   begin
+    compiler^.enclosing^.locals[local].isCaptured := true;
     arg := addUpvalue(compiler, Byte(local), true);
     Exit(true);
   end;
@@ -659,7 +663,10 @@ begin
   while (current^.localCount > 0) and
         (current^.locals[current^.localCount - 1].depth > current^.scopeDepth)
   do begin
-    emitCode(OP_POP);
+    if current^.locals[current^.localCount - 1].isCaptured then
+      emitCode(OP_CLOSE_UPVALUE)
+    else
+      emitCode(OP_POP);
     dec(current^.localCount);
   end;
 end;

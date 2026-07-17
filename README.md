@@ -29,6 +29,7 @@ Currently completed chapters:
     * I have a guess this is because many things done with macro in clox I had to remake with actual functions and procedures;
     * Adding inline directive did increase the speed, but not much, now it's just 4 times slower than Python;
     * Adding local IP variable to run() didn't give much speed increase (there is no "register" equivalent in pascal);
+* Closures;
 
 # License
 
