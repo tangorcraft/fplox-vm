@@ -48,7 +48,7 @@ type
   public
     values: PValue;
 
-    constructor Create();
+    constructor Create(const mgr: TMemoryManager);
 
     procedure write(V: TValue);
   end;
@@ -151,8 +151,9 @@ end;
 
 { TValueArray }
 
-constructor TValueArray.Create();
+constructor TValueArray.Create(const mgr: TMemoryManager);
 begin
+  inherited Create(mgr);
   Init(SizeOf(TValue));
   values := Grow;
 end;

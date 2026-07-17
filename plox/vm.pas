@@ -360,7 +360,7 @@ var
     b := AS_STRING(pop());
     a := AS_STRING(pop());
     len := a^.length_ + b^.length_;
-    s := GROW_ARRAY(nil, 0, len + 1, SizeOf(char));
+    s := objs.GROW_ARRAY(nil, 0, len + 1, SizeOf(char));
     memcpy(s, a^.chars, SizeOf(char) * a^.length_);
     memcpy(s + a^.length_, b^.chars, SizeOf(char) * b^.length_);
     s[len] := #0;

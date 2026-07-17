@@ -20,6 +20,7 @@ type
 
   TKeyTable = class
   private
+    mem: TMemoryManager;
     FList: PKeyEntry;
     FLinkCount: Cardinal; // number of separate linked list entries
     FGrowThreshold: Cardinal;
@@ -32,7 +33,7 @@ type
     function tableGetEntry(const chars: PChar; const len: Integer): PKeyEntry;
     procedure freeLinkedList(var top: PKeyEntry);
   public
-    constructor Create;
+    constructor Create(const mgr: TMemoryManager);
     destructor Destroy; override;
   end;
 
@@ -89,7 +90,7 @@ var
   function newEntryTop(var top: PKeyEntry): PKeyEntry;
   begin
     if bin = nil then
-      Result := ALLOCATE(entrySize)
+      Result := mem.ALLOCATE(entrySize)
     else begin
       Result := bin;
       bin := bin^.next;
@@ -135,7 +136,7 @@ begin
   FCapacity := GROW_CAPACITY(FCapacity + FLinkCount);
   FLinkCount := 0;
 
-  FList := ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
+  FList := mem.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
   FGrowThreshold := Trunc(FCapacity * HASHSET_MAX_LOAD);
   if old_list = nil then Exit;
 
@@ -150,14 +151,14 @@ begin
     copyLinkedList();
     copyEntry(iter_entry^);
   end;
-  FREE_ARRAY(old_list, old_size, entrySize);
+  mem.FREE_ARRAY(old_list, old_size, entrySize);
   freeLinkedList(bin);
 end;
 
 function TKeyTable.newNext(const entry: PKeyEntry): PKeyEntry;
 begin
   inc(FLinkCount);
-  Result := ALLOCATE(entrySize);
+  Result := mem.ALLOCATE(entrySize);
   Result^.next := nil;
   Result^.key := nil;
   entry^.next := Result;
@@ -185,13 +186,14 @@ begin
   while top <> nil do
   begin
     next := top^.next;
-    FREE_(top, entrySize);
+    mem.FREE_(top, entrySize);
     top := next;
   end;
 end;
 
-constructor TKeyTable.Create;
+constructor TKeyTable.Create(const mgr: TMemoryManager);
 begin
+  mem := mgr;
   FLinkCount := 0;
   FCapacity := 0;
   FList := nil;
@@ -205,7 +207,7 @@ begin
   // hash set does not own any objects, so we only need to free memory for the key entries
   for i := 0 to FCapacity - 1 do
     freeLinkedList(FList[i].next);
-  FREE_ARRAY(FList, FCapacity, entrySize);
+  mem.FREE_ARRAY(FList, FCapacity, entrySize);
   inherited Destroy;
 end;
 
@@ -214,7 +216,7 @@ end;
 constructor TObjectManager_SI.Create;
 begin
   inherited Create;
-  FHashSet := TKeyTable.Create;
+  FHashSet := TKeyTable.Create(Self);
 end;
 
 destructor TObjectManager_SI.Destroy;

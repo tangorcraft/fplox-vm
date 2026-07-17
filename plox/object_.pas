@@ -19,9 +19,10 @@ type
 
   { TObjectManager }
 
-  TObjectManager = class
+  TObjectManager = class(TMemoryManager)
   protected
     function allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
+    procedure freeObject(const O: PLoxObj);
     function allocateString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
     // moving to protected, should be only called from child class (string interning)
     function takeString(const chars: PChar; const len: Integer; const hash: UInt32): PObjString;
@@ -92,7 +93,18 @@ begin
     (strcomp(strA^.chars, strB^.chars) = 0);
 end;
 
-procedure freeObject(const O: PLoxObj);
+{ TObjectManager }
+
+function TObjectManager.allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
+begin
+  Result := ALLOCATE(size);
+  PLoxObj(Result)^.type_ := type_;
+  PLoxObj(Result)^.size := size;
+  PLoxObj(Result)^.next := objectsTop;
+  objectsTop := Result;
+end;
+
+procedure TObjectManager.freeObject(const O: PLoxObj);
 begin
   case O^.type_ of
     OBJ_CHUNK: begin
@@ -108,17 +120,6 @@ begin
     end;
   end;
   FREE_(O, O^.size);
-end;
-
-{ TObjectManager }
-
-function TObjectManager.allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
-begin
-  Result := ALLOCATE(size);
-  PLoxObj(Result)^.type_ := type_;
-  PLoxObj(Result)^.size := size;
-  PLoxObj(Result)^.next := objectsTop;
-  objectsTop := Result;
 end;
 
 function TObjectManager.allocateString(const start: PChar; const len: Integer;

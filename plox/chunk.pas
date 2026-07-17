@@ -170,10 +170,11 @@ end;
 
 constructor TChunk.Create(const aObjs: TObjectManager_SI);
 begin
+  inherited Create(aObjs);
   Init(SizeOf(Byte));
   code := Grow;
   SetLength(lines, capacity);
-  constants := TValueArray.Create();
+  constants := TValueArray.Create(aObjs);
   objs := aObjs;
 end;
 

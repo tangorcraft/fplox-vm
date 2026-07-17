@@ -134,7 +134,7 @@ begin
   if (FProbeStep and 1) = 1 then // probe step is odd, make odd capacity even
     inc(FCapacity);
   // zeroing memory will set value type to VAL_NIL, which is defined as = 0
-  FEntries := ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
+  FEntries := FObjs.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
   FGrowThreshold := Trunc(FCapacity * HT_MAX_LOAD);
   FTombstoneThreshold := Trunc(FCapacity * HT_TOMBSTONE_LOAD);
   if FCapacity < HT_MIN_CAPACITY then
@@ -174,7 +174,7 @@ begin
     dest^ := source^;
     inc(FCount);
   end;
-  FREE_ARRAY(old_list, old_capacity, entrySize);
+  FObjs.FREE_ARRAY(old_list, old_capacity, entrySize);
 end;
 
 function THashTable.findEntry(const key: PObjString): PTableEntry;
@@ -223,7 +223,7 @@ end;
 
 destructor THashTable.Destroy;
 begin
-  FREE_ARRAY(FEntries, FCapacity, entrySize);
+  FObjs.FREE_ARRAY(FEntries, FCapacity, entrySize);
   inherited Destroy;
 end;
 
