@@ -82,8 +82,6 @@ type
     current: PCompilerState;
     FObjs: TObjectManager_Fun;
 
-    procedure initCompiler(const state: PCompilerState; const type_: TFunctionType);
-
     constructor Create(const mgr: TObjectManager_Fun);
 
     function currentChunk: TChunk;
@@ -108,8 +106,9 @@ type
     function emitJump(const B: OpCode): Integer;
     procedure patchJump(const offset: Integer);
     procedure emitLoop(const loopStart: integer);
-    function endCompiler(): PObjFunction;
 
+    procedure initCompiler(const state: PCompilerState; const type_: TFunctionType);
+    function endCompiler(): PObjFunction;
     procedure parsePrecedense(const P: TPrecedence);
     function identifierConstant(const name: TToken): Integer;
     procedure addLocal(const name: TToken);
@@ -168,27 +167,6 @@ begin
 end;
 
 { TCompiler }
-
-procedure TCompiler.initCompiler(const state: PCompilerState; const type_: TFunctionType);
-var
-  local: PLocal;
-begin
-  state^.enclosing := current;
-  state^.func := nil;
-  state^.funType := type_;
-  state^.localCount := 0;
-  state^.scopeDepth := 0;
-  state^.func := FObjs.newFunction();
-  current := state;
-  if type_ <> TYPE_SCRIPT then
-    current^.func^.name := FObjs.copyString(parser.previous.start, parser.previous.length);
-
-  local := @current^.locals[current^.localCount];
-  inc(current^.localCount);
-  local^.depth := 0;
-  local^.name.start := '';
-  local^.name.length := 0;
-end;
 
 constructor TCompiler.Create(const mgr: TObjectManager_Fun);
 
@@ -403,6 +381,27 @@ begin
 
   emitByte((offset shr 8) and $ff);
   emitByte(offset and $ff);
+end;
+
+procedure TCompiler.initCompiler(const state: PCompilerState; const type_: TFunctionType);
+var
+  local: PLocal;
+begin
+  state^.enclosing := current;
+  state^.func := nil;
+  state^.funType := type_;
+  state^.localCount := 0;
+  state^.scopeDepth := 0;
+  state^.func := FObjs.newFunction();
+  current := state;
+  if type_ <> TYPE_SCRIPT then
+    current^.func^.name := FObjs.copyString(parser.previous.start, parser.previous.length);
+
+  local := @current^.locals[current^.localCount];
+  inc(current^.localCount);
+  local^.depth := 0;
+  local^.name.start := '';
+  local^.name.length := 0;
 end;
 
 function TCompiler.endCompiler: PObjFunction;
