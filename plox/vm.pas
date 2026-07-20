@@ -109,6 +109,10 @@ begin
   dec(stackTop, N);
 end;
 
+{$define PEEK_v0:=(stackTop - 1)^}
+{$define PEEK_p0:=(stackTop - 1)}
+{$define PEEK_v1:=(stackTop - 2)^}
+{$define PEEK_p1:=(stackTop - 2)}
 function TLoxVM.peek(const distance: Integer): PValue;
 begin
   Result := stackTop - 1 - distance;
@@ -323,11 +327,7 @@ var
     Inc(local_ip);
   end;
 
-  function READ_Code: OpCode; inline;
-  begin
-    Result := OpCode(local_ip^);
-    Inc(local_ip);
-  end;
+  {$define READ_Code:=OpCode(local_ip^);Inc(local_ip);}
 
   function READ_SHORT: Word; inline;
   begin
@@ -335,16 +335,18 @@ var
     Inc(local_ip, 2);
   end;
 
-  function READ_CONSTANT: TValue;
+  function READ_CONSTANT: TValue; inline;
   begin
-    Result := frame^.closure^.func.chunk.constants.values[READ_BYTE];
+    Result := frame^.closure^.func.chunk.constants.values[local_ip^];
+    Inc(local_ip);
   end;
 
   function READ_CONSTANT_LONG: TValue;
   var
     index: integer;
   begin
-    index := (READ_BYTE shl 16) or (READ_BYTE shl 8) or READ_BYTE;
+    index := (local_ip[0] shl 16) or (local_ip[1] shl 8) or local_ip[2];
+    Inc(local_ip, 3);
     Result := frame^.closure^.func.chunk.constants.values[index];
   end;
 
@@ -418,7 +420,7 @@ begin
       end;
       OP_JUMP_IF_FALSE: begin
         temp.W := READ_SHORT();
-        if isFalsey(peek(0)^) then
+        if isFalsey(PEEK_v0) then
           inc(local_ip, temp.W);
       end;
       OP_JUMP_IF_FALSE_POP: begin
@@ -487,7 +489,7 @@ begin
       OP_POP: pop();
       OP_SET_LOCAL: begin
         temp.B := READ_BYTE; // slot
-        frame^.slots[temp.B] := peek(0)^;
+        frame^.slots[temp.B] := PEEK_v0;
       end;
       OP_GET_LOCAL: begin
         temp.B := READ_BYTE; // slot
@@ -495,7 +497,7 @@ begin
       end;
       OP_SET_UPVALUE: begin
         temp.B := READ_BYTE; // slot
-        frame^.closure^.upvalues[temp.B]^.location^ := peek(0)^;
+        frame^.closure^.upvalues[temp.B]^.location^ := PEEK_v0;
       end;
       OP_GET_UPVALUE: begin
         temp.B := READ_BYTE; // slot
@@ -509,7 +511,7 @@ begin
           temp.name := AS_STRING(READ_CONSTANT_LONG);
         // tableSet return True if key is new, i.e. don't exist in hash table
         // no value is set then if mustExist is also True
-        if globals.tableSet(temp.name, peek(0)^, true) then
+        if globals.tableSet(temp.name, PEEK_v0, true) then
         begin
           // so no need for deletion
           // but is it faster this way?
@@ -532,18 +534,18 @@ begin
       end;
       OP_DEFINE_GLOBAL: begin
         temp.name := AS_STRING(READ_CONSTANT);
-        globals.tableSet(temp.name, peek(0)^);
+        globals.tableSet(temp.name, PEEK_v0);
         pop();
       end;
       OP_DEFINE_GLOBAL_LONG: begin
         temp.name := AS_STRING(READ_CONSTANT_LONG);
-        globals.tableSet(temp.name, peek(0)^);
+        globals.tableSet(temp.name, PEEK_v0);
         pop();
       end;
       OP_NOT:
         push(BOOL_VAL(isFalsey(pop())));
       OP_NEGATE: begin
-        temp.pval := peek(0);
+        temp.pval := PEEK_p0;
         if not IS_NUMBER(temp.pval^) then
         begin
           runtimeError('Operand must be a number.',[], local_ip);
@@ -565,9 +567,9 @@ begin
         {$define MACRO_OP:=<}
         {$i vm_binary_op.inc}
       OP_ADD: begin
-        if IS_STRING(peek(0)^) and IS_STRING(peek(1)^) then
+        if IS_STRING(PEEK_v0) and IS_STRING(PEEK_v1) then
           concatenate()
-        else if IS_NUMBER(peek(0)^) and IS_NUMBER(peek(1)^) then
+        else if IS_NUMBER(PEEK_v0) and IS_NUMBER(PEEK_v1) then
         begin
           valB := pop();
           valA := pop();
