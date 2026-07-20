@@ -48,6 +48,10 @@ type
 
 implementation
 
+{$ifdef DEBUG}
+uses common;
+{$endif}
+
 const
   MaxWord = $FFFF;
 
@@ -65,7 +69,17 @@ end;
 
 procedure TMemoryManager.collectGarbage();
 begin
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    print('-- gc begin'+NL, true);
+  {$endif}
 
+  //markRoots();
+
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    print('-- gc end'+NL, true);
+  {$endif}
 end;
 
 function TMemoryManager.reallocate(P: Pointer; const old_size: SizeInt; const new_size: SizeInt): Pointer;
@@ -73,7 +87,8 @@ begin
   if new_size > old_size then
   begin
     {$ifdef DEBUG_STRESS_GC}
-    collectGarbage();
+    if debugStressGC then
+      collectGarbage();
     {$endif}
   end;
   if new_size = 0 then

@@ -95,6 +95,10 @@ end;
 
 { TObjectManager }
 
+{$ifdef DEBUG_LOG_GC}
+function obj_type_str(const T: ObjType): string; begin str(T, Result); end;
+{$endif}
+
 function TObjectManager.allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
 begin
   Result := ALLOCATE(size);
@@ -102,10 +106,20 @@ begin
   PLoxObj(Result)^.size := size;
   PLoxObj(Result)^.next := objectsTop;
   objectsTop := Result;
+
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    printf('%p allocate %u for %s'+NL, [result, size, obj_type_str(type_)], true);
+  {$endif}
 end;
 
 procedure TObjectManager.freeObject(const O: PLoxObj);
 begin
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    printf('%p free type %s'+NL, [O, obj_type_str(O^.type_)], true);
+  {$endif}
+
   case O^.type_ of
     OBJ_CHUNK: begin
       PObjChunk(O)^.chunk.Free;

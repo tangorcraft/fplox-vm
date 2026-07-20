@@ -18,6 +18,8 @@ var
   {$ifdef DEBUG}
   debugPrintCode: Boolean = True;
   debugTraceExecution: Boolean = True;
+  debugStressGC: Boolean = True;
+  debugLogGC: Boolean = True;
   {$endif}
 
 const
