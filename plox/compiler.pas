@@ -225,7 +225,7 @@ end;
 
 function TCompiler.currentChunk: TChunk;
 begin
-  Result := current^.func^.chunk;
+  Result := current^.func^.fn.chunk;
 end;
 
 procedure TCompiler.errorAt(const T: TToken; const msg: PChar);
@@ -396,7 +396,7 @@ begin
   state^.func := FObjs.newFunction();
   current := state;
   if type_ <> TYPE_SCRIPT then
-    current^.func^.name := FObjs.copyString(parser.previous.start, parser.previous.length);
+    current^.func^.fn.name := FObjs.copyString(parser.previous.start, parser.previous.length);
 
   local := @current^.locals[current^.localCount];
   inc(current^.localCount);
@@ -413,10 +413,10 @@ begin
   {$ifdef DEBUG_PRINT_CODE}
   if (not parser.hadError) and debugPrintCode then
   begin
-    if Result^.name = nil then
+    if Result^.fn.name = nil then
       disassembleChunk(currentChunk(), '<script>')
     else
-      disassembleChunk(currentChunk(), Result^.name^.chars);
+      disassembleChunk(currentChunk(), Result^.fn.name^.chars);
   end;
   {$endif}
   current := current^.enclosing;
@@ -552,7 +552,7 @@ var
   i: integer;
   upval: PUpValue;
 begin
-  Result := compiler^.func^.upvalueCount;
+  Result := compiler^.func^.fn.upvalueCount;
 
   for i := 0 to Result - 1 do
   begin
@@ -569,7 +569,7 @@ begin
 
   compiler^.upvalues[Result].isLocal := isLocal;
   compiler^.upvalues[Result].index := index;
-  inc(compiler^.func^.upvalueCount);
+  inc(compiler^.func^.fn.upvalueCount);
 end;
 
 function TCompiler.resolveUpvalue(const compiler: PCompilerState; const name: TToken;
@@ -831,8 +831,8 @@ begin
   consume(TOKEN_LEFT_PAREN, 'Expect "(" after function name.');
   if not check(TOKEN_RIGHT_PAREN) then
   repeat
-    inc(current^.func^.arity);
-    if current^.func^.arity > 255 then
+    inc(current^.func^.fn.arity);
+    if current^.func^.fn.arity > 255 then
       errorAtCurrent('Can''t have more than 255 parameters.');
     constant := parseVariable('Expect parameter name.');
     defineVariable(constant);
@@ -844,7 +844,7 @@ begin
   func := endCompiler();
   emitCodeVar(OP_CLOSURE, OP_CLOSURE_LONG, makeConstant(OBJ_VAL(func)));
 
-  for i := 0 to func^.upvalueCount - 1 do
+  for i := 0 to func^.fn.upvalueCount - 1 do
   begin
     if compiler.upvalues[i].isLocal then
       emitByte(1)

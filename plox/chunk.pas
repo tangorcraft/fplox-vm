@@ -61,6 +61,9 @@ type
     lines: array of Integer;
     objs: TObjectManager_SI;
 
+    refCount: Integer;
+    procedure reference(const countUp: Boolean);
+
     constructor Create(const aObjs: TObjectManager_SI);
     destructor Destroy; override;
 
@@ -73,14 +76,21 @@ type
   end;
 
   TNativeFn = procedure (const args: PValue; const argCount: Integer; var result: TValue);
-  TObjFunction = record
-    obj: TLoxObj;
+  TFnData = record
     arity: Integer;
-    upvalueCount: integer;
     name: PObjString;
     case Byte of
-    0: (chunk: TChunk);
-    1: (nativeFn: TNativeFn);
+    0: (
+      upvalueCount: integer;
+      chunk: TChunk;
+      );
+    1: (
+      nativeFn: TNativeFn;
+      );
+  end;
+  TObjFunction = record
+    obj: TLoxObj;
+    fn: TFnData;
   end;
   PObjFunction = ^TObjFunction;
 
@@ -96,26 +106,19 @@ type
   // this way ObjClosure can be safely passed to anything that expect ObjFunction
   // no much  memory overhead since chunk is not a record that is allocated in ObjFunction, but a separate object
   TObjClosure = record
-    func: TObjFunction;
+    obj: TLoxObj;
+    func: TFnData;
     upvalues: PPObjUpvalue;
     upvalueCount: Integer;
   end;
   PObjClosure = ^TObjClosure;
 
-  TObjChunk = record
-    obj: TLoxObj;
-    chunk: TChunk;
-  end;
-  PObjChunk = ^TObjChunk;
-
   { TObjectManager_Fun }
 
   TObjectManager_Fun = class(TObjectManager_SI)
-  private
-    function newChunk(): TChunk;
   public
     function newFunction(): PObjFunction;
-    function newClosure(const fn: TObjFunction): PObjClosure;
+    function newClosure(const func: TObjFunction): PObjClosure;
     function newNative(const fn: TNativeFn): PObjFunction;
     function newUpvalue(const slot: PValue): PObjUpvalue;
   end;
@@ -158,15 +161,27 @@ end;
 
 procedure printFunction(const V: PObjFunction);
 begin
-  if V^.name = nil then
+  if V^.fn.name = nil then
     print('<script>')
   else if V^.obj.type_ = OBJ_NATIVE_FN then
-    printf('<nativeFn %s>', [V^.name^.chars])
+    printf('<nativeFn %s>', [V^.fn.name^.chars])
   else
-    printf('<fn %s>', [V^.name^.chars]);
+    printf('<fn %s>', [V^.fn.name^.chars]);
 end;
 
 { TChunk }
+
+procedure TChunk.reference(const countUp: Boolean);
+begin
+  if countUp then
+    inc(refCount)
+  else
+  begin
+    dec(refCount);
+    if refCount <= 0 then
+      Free;
+  end;
+end;
 
 constructor TChunk.Create(const aObjs: TObjectManager_SI);
 begin
@@ -176,6 +191,7 @@ begin
   SetLength(lines, capacity);
   constants := TValueArray.Create(aObjs);
   objs := aObjs;
+  refCount := 0;
 end;
 
 destructor TChunk.Destroy;
@@ -231,45 +247,41 @@ end;
 
 { TObjectManager_Fun }
 
-function TObjectManager_Fun.newChunk(): TChunk;
-var
-  obj: PObjChunk;
-begin
-  Result := TChunk.Create(self);
-  obj := allocateObject(sizeof(TObjChunk), OBJ_CHUNK);
-  obj^.chunk := Result;
-end;
-
 function TObjectManager_Fun.newFunction(): PObjFunction;
+var
+  chunk: TChunk;
 begin
+  chunk := TChunk.Create(Self);
+  // since GC can be called on any allocation I create TChunk before allocating ObjFunction
+  // this way GC will not collect new ObjFunction when TChunk allocates memory on creation
+  // GC will not manage TChunk object directly, TChunk will use reference count
   Result := allocateObject(sizeof(TObjFunction), OBJ_FUNCTION);
-  Result^.arity := 0;
-  Result^.upvalueCount := 0;
-  Result^.name := nil;
-  Result^.chunk := newChunk();
+  Result^.fn.arity := 0;
+  Result^.fn.upvalueCount := 0;
+  Result^.fn.name := nil;
+  Result^.fn.chunk := chunk;
+  Result^.fn.chunk.reference(true);
 end;
 
-function TObjectManager_Fun.newClosure(const fn: TObjFunction): PObjClosure;
+function TObjectManager_Fun.newClosure(const func: TObjFunction): PObjClosure;
 var
-  obj: TLoxObj;
   upvalues: PPObjUpvalue;
 begin
-  upvalues := ALLOC_AND_ZERO_ARRAY(fn.upvalueCount, sizeof(PObjUpvalue));
+  upvalues := ALLOC_AND_ZERO_ARRAY(func.fn.upvalueCount, sizeof(PObjUpvalue));
 
   Result := allocateObject(sizeof(TObjClosure), OBJ_CLOSURE);
-  obj := Result^.func.obj; // make sure fn will not overwrite TLoxObj header of closure object
-  Result^.func := fn;
-  Result^.func.obj := obj;
+  Result^.func := func.fn;
+  Result^.func.chunk.reference(true);
   Result^.upvalues := upvalues;
-  Result^.upvalueCount := fn.upvalueCount;
+  Result^.upvalueCount := func.fn.upvalueCount;
 end;
 
 function TObjectManager_Fun.newNative(const fn: TNativeFn): PObjFunction;
 begin
   Result := allocateObject(sizeof(TObjFunction), OBJ_NATIVE_FN);
-  Result^.arity := 0;
-  Result^.name := nil;
-  Result^.nativeFn := fn;
+  Result^.fn.arity := 0;
+  Result^.fn.name := nil;
+  Result^.fn.nativeFn := fn;
 end;
 
 function TObjectManager_Fun.newUpvalue(const slot: PValue): PObjUpvalue;

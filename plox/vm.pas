@@ -144,14 +144,14 @@ var
 begin
   // can set arity to -1 for native function to accept any number of arguments
   // since native function can't access VM object, it can't generate lox runtime errors
-  if (func^.arity <> -1) and (argCount <> func^.arity) then
+  if (func^.fn.arity <> -1) and (argCount <> func^.fn.arity) then
   begin
-    runtimeError('Expected %d arguments but got %d.', [func^.arity, argCount]);
+    runtimeError('Expected %d arguments but got %d.', [func^.fn.arity, argCount]);
     Exit(false);
   end;
 
   retVal := NIL_VAL;
-  func^.nativeFn(stackTop - argCount, argCount, retVal);
+  func^.fn.nativeFn(stackTop - argCount, argCount, retVal);
   dec(stackTop, argCount + 1);
   push(retVal);
   Result := True;
@@ -223,13 +223,13 @@ begin
   begin
     frame := @frames[i];
     func := @frame^.closure^.func;
-    instruction := SizeInt(frame^.ip - func^.chunk.code) - 1;
-    line := func^.chunk.lines[instruction];
+    instruction := SizeInt(frame^.ip - func^.fn.chunk.code) - 1;
+    line := func^.fn.chunk.lines[instruction];
     printf('[line %d] in ', [line], true);
-    if func^.name = nil then
+    if func^.fn.name = nil then
       print('script'+NL, true)
     else
-      printf('%s()'+NL, [func^.name^.chars], true);
+      printf('%s()'+NL, [func^.fn.name^.chars], true);
   end;
 
   resetStack();
@@ -256,8 +256,8 @@ procedure TLoxVM.defineNative(const name: string; const arity: integer; const fu
 begin
   push(OBJ_VAL(objs.copyString(PChar(name), length(name))));
   push(OBJ_VAL(objs.newNative(func)));
-  AS_FUNCTION(stack[1])^.arity := arity;
-  AS_FUNCTION(stack[1])^.name := AS_STRING(stack[0]);
+  AS_FUNCTION(stack[1])^.fn.arity := arity;
+  AS_FUNCTION(stack[1])^.fn.name := AS_STRING(stack[0]);
   globals.tableSet(AS_STRING(stack[0]), stack[1]);
   popN(2);
 end;
@@ -295,13 +295,10 @@ begin
   Result := run();
 end;
 
-{$inline on}
-
 type
   TTempUnion = record
     case Byte of
     0: (name: PObjString);
-    1: (chunk: PObjChunk);
     2: (closure: PObjClosure);
     3: (func: PObjFunction);
     4: (B: byte);
@@ -559,7 +556,6 @@ begin
         valA := pop();
         push(BOOL_VAL(valuesEqual(valA, valB)));
       end;
-      {$macro on}
       OP_GREATER:
         {$define MACRO_VAL:=BOOL_VAL}
         {$define MACRO_OP:=>}
@@ -597,7 +593,6 @@ begin
 
       {$undef MACRO_VAL}
       {$undef MACRO_OP}
-      {$macro off}
     end;
   end;
 end;

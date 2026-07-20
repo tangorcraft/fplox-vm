@@ -9,5 +9,11 @@
   {$define DEBUG_LOG_GC}
 {$endif}
 
+// defining these options globally
+{$macro on}
+{$inline on}
+// while these options are defined in the Lazarus project
+// but plox folder can be used separately as a module for different project
+
 {$define USE_SIPHASH} // use FNV_1a hash if not defined
 

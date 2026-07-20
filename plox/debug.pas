@@ -77,7 +77,7 @@ begin
   end;
   print_constant(name, constant, C.constants.values[constant]);
   func := AS_FUNCTION(C.constants.values[constant]);
-  for i := 0 to func^.upvalueCount - 1 do
+  for i := 0 to func^.fn.upvalueCount - 1 do
   begin
     isLocal := C.code[Result];
     inc(Result);

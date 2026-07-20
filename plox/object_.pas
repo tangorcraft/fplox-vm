@@ -121,12 +121,15 @@ begin
   {$endif}
 
   case O^.type_ of
-    OBJ_CHUNK: begin
-      PObjChunk(O)^.chunk.Free;
+    OBJ_FUNCTION: begin
+      PObjFunction(O)^.fn.chunk.reference(false);
     end;
     OBJ_CLOSURE: begin
       with PObjClosure(O)^ do
+      begin
+        func.chunk.reference(false);
         FREE_ARRAY(upvalues, upvalueCount, sizeof(PObjUpvalue));
+      end;
     end;
     OBJ_STRING: begin
       with PObjString(O)^ do
