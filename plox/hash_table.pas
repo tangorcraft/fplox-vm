@@ -216,7 +216,7 @@ var
   idx: integer;
   tombstone: PTableEntry;
 begin
-  idx := Integer(key^.hash) mod FCapacity;
+  idx := key^.hash mod FCapacity;
   tombstone := nil;
   while true do
   begin
