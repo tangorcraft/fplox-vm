@@ -112,7 +112,7 @@ var
   idx: integer;
   destEntry: PTableEntry;
 begin
-  idx := Integer(source.key^.hash) mod dest.Capacity;
+  idx := source.key^.hash mod dest.Capacity;
   while true do
   begin
     destEntry := dest.Entries + idx;
