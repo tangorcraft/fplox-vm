@@ -35,6 +35,8 @@ type
   public
     constructor Create(const mgr: TMemoryManager);
     destructor Destroy; override;
+
+    procedure tableRemoveWhite();
   end;
 
   { TObjectManager_SI: String Interning}
@@ -45,6 +47,8 @@ type
   public
     constructor Create;
     destructor Destroy; override;
+
+    procedure sweepStringInternTable;
 
     // hiding methods of the parent class
     function takeString(const chars: PChar; const len: Integer): PObjString;
@@ -211,18 +215,79 @@ begin
   inherited Destroy;
 end;
 
+procedure TKeyTable.tableRemoveWhite();
+var
+  i: integer;
+  prev, entry, white, bin: PKeyEntry;
+begin
+  bin := nil; // linked list of entries to be freed
+  for i := 0 to FCapacity - 1 do
+  begin
+    prev := nil;
+    entry := FList + i;
+    while entry <> nil do
+    begin
+      if (entry^.key <> nil) and (not entry^.key^.obj.isMarked) then
+      begin // found white
+        if prev = nil then // entry on the main array
+        begin
+          if entry^.next = nil then
+          begin
+            entry^.key := nil; // no next, just nil the key
+            Break; // exit while loop
+          end
+          else
+          begin
+            // there is next entry in linked list
+            // copy it into main array
+            white := entry^.next;
+            entry^ := white^;
+            // and move it to to-be-freed list
+            white^.next := bin;
+            bin := white;
+            // I could've reused prev vairable here, but this looks more readable
+          end;
+        end
+        else
+        begin // entry is in linked list
+          // extract entry from linked list
+          prev^.next := entry^.next;
+          // and put it into to-be-freed list
+          entry^.next := bin;
+          bin := entry;
+          // point entry back to linked list
+          entry := prev^.next;
+        end;
+      end
+      else
+      begin // entry is empty or marked, go to next
+        prev := entry;
+        entry := entry^.next;
+      end;
+    end;
+  end;
+  freeLinkedList(bin);
+end;
+
 { TObjectManager_SI }
 
 constructor TObjectManager_SI.Create;
 begin
   inherited Create;
   FHashSet := TKeyTable.Create(Self);
+  sweepStringInternProc := @sweepStringInternTable;
 end;
 
 destructor TObjectManager_SI.Destroy;
 begin
+  sweepStringInternProc := nil;
   FHashSet.Free;
   inherited Destroy;
+end;
+
+procedure TObjectManager_SI.sweepStringInternTable;
+begin
+  FHashSet.tableRemoveWhite();
 end;
 
 function TObjectManager_SI.takeString(const chars: PChar; const len: Integer): PObjString;

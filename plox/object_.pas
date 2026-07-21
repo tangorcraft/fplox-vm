@@ -29,7 +29,15 @@ type
   private
     firstMarker: PMarker;
     procedure markRoots();
+  private
+    grayStack: array of PLoxObj;
+    grayCapacity: Integer;
+    grayCount: Integer;
+    procedure traceReferences();
+    procedure blackenObject(const obj: PLoxObj);
+    procedure sweep();
   protected
+    sweepStringInternProc: TProcedureMethod;
     function allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
     procedure freeObject(const O: PLoxObj);
     function allocateString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
@@ -38,12 +46,14 @@ type
     function copyString(const start: PChar; const len: Integer; const hash: UInt32): PObjString;
   public
     objectsTop: PLoxObj;
+    temporary: PLoxObj;
 
     procedure collectGarbage();
     procedure registerMarker(const markRootsProc: TProcedureMethod);
     procedure unregisterMarker(const markRootsProc: TProcedureMethod);
     procedure markValue(const V: TValue);
     procedure markObject(const O: PLoxObj);
+    procedure markArray(const arr: TValueArray);
 
     constructor Create;
     destructor Destroy; override;
@@ -54,7 +64,7 @@ function IS_STRING(const V: TValue): Boolean; inline;
 function AS_STRING(const V: TValue): PObjString; inline;
 function AS_CSTRING(const V: TValue): PChar; inline;
 
-procedure printObject(const V: TValue);
+procedure printObject(const V: TValue; const err: Boolean = false);
 function stringEqual(const A, B: TValue): Boolean;
 
 implementation
@@ -85,14 +95,14 @@ begin
   Result := PObjString(V.as_obj)^.chars;
 end;
 
-procedure printObject(const V: TValue);
+procedure printObject(const V: TValue; const err: Boolean);
 begin
   case OBJ_TYPE(V) of
     OBJ_NATIVE_FN,
     OBJ_CLOSURE,
-    OBJ_FUNCTION: printFunction(AS_FUNCTION(V));
-    OBJ_UPVALUE: print('upvalue');
-    OBJ_STRING: printf('"%s"',[AS_CSTRING(V)]);
+    OBJ_FUNCTION: printFunction(AS_FUNCTION(V), err);
+    OBJ_UPVALUE: print('upvalue', err);
+    OBJ_STRING: printf('"%s"',[AS_CSTRING(V)], err);
   end;
 end;
 
@@ -122,6 +132,83 @@ begin
   begin
     M^.markRoots();
     M := M^.next;
+  end;
+end;
+
+procedure TObjectManager.traceReferences();
+var
+  obj: PLoxObj;
+begin
+  while grayCount > 0 do
+  begin
+    dec(grayCount);
+    obj := grayStack[grayCount];
+    blackenObject(obj);
+  end;
+end;
+
+procedure TObjectManager.blackenObject(const obj: PLoxObj);
+var
+  fn: PObjFunction;
+  closure: PObjClosure;
+  i: Integer;
+begin
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+  begin
+    printf('%p blacken ', [obj], true);
+    printValue(OBJ_VAL(obj), true);
+    print(NL, true);
+  end;
+  {$endif}
+
+  case obj^.type_ of
+    OBJ_NATIVE_FN: begin
+      markObject(PLoxObj( PObjFunction(obj)^.fn.name) );
+    end;
+    OBJ_CLOSURE: begin
+      closure := PObjClosure(obj);
+      markObject(PLoxObj(closure^.func.name));
+      markArray(closure^.func.chunk.constants);
+      for i := 0 to closure^.upvalueCount - 1 do
+        markObject(PLoxObj(closure^.upvalues[i]));
+    end;
+    OBJ_FUNCTION: begin
+      fn := PObjFunction(obj);
+      markObject( PLoxObj(fn^.fn.name) );
+      markArray(fn^.fn.chunk.constants);
+    end;
+    OBJ_UPVALUE:
+      markValue(PObjUpvalue(obj)^.closed);
+    //OBJ_STRING: Exit;
+  end;
+end;
+
+procedure TObjectManager.sweep();
+var
+  previous, obj, unreached: PLoxObj;
+begin
+  previous := nil;
+  obj := objectsTop;
+  while obj <> nil do
+  begin
+    if obj^.isMarked then
+    begin
+      obj^.isMarked := false;
+      previous := obj;
+      obj := obj^.next;
+    end
+    else
+    begin
+      unreached := obj;
+      obj := obj^.next;
+      if previous <> nil then
+        previous^.next := obj
+      else
+        objectsTop := obj;
+
+      freeObject(unreached);
+    end;
   end;
 end;
 
@@ -179,6 +266,9 @@ constructor TObjectManager.Create;
 begin
   objectsTop := nil;
   firstMarker := nil;
+  grayCapacity := 32; // a bit of starting amount
+  grayCount := 0;
+  SetLength(grayStack, grayCapacity);
   collectGarbageProc := @collectGarbage;
 end;
 
@@ -199,6 +289,7 @@ begin
     FREE_(firstMarker, markerSize);
     firstMarker := nextM;
   end;
+  SetLength(grayStack, 0);
   inherited Destroy;
 end;
 
@@ -228,7 +319,12 @@ begin
     print('-- gc begin'+NL, true);
   {$endif}
 
+  markObject(temporary);
   markRoots();
+  traceReferences();
+  if Assigned(sweepStringInternProc) then
+    sweepStringInternProc();
+  sweep();
 
   {$ifdef DEBUG_LOG_GC}
   if debugLogGC then
@@ -276,15 +372,39 @@ procedure TObjectManager.markObject(const O: PLoxObj);
 begin
   if O = nil then
     Exit;
+  if O^.isMarked then
+    Exit;
+
   {$ifdef DEBUG_LOG_GC}
   if debugLogGC then
   begin
     printf('%p mark ', [O], true);
-    printValue(OBJ_VAL(O));
-    print(NL);
+    printValue(OBJ_VAL(O), true);
+    print(NL, true);
   end;
   {$endif}
+
   O^.isMarked := True;
+
+  if O^.type_ in [OBJ_STRING] then
+    Exit;
+
+  if grayCapacity < (grayCount + 1) then
+  begin
+    grayCapacity := GROW_CAPACITY(grayCapacity);
+    SetLength(grayStack, grayCapacity);
+  end;
+
+  grayStack[grayCount] := O;
+  inc(grayCount);
+end;
+
+procedure TObjectManager.markArray(const arr: TValueArray);
+var
+  i: Integer;
+begin
+  for i := 0 to arr.count - 1 do
+    markValue(arr.values[i]);
 end;
 
 end.

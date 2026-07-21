@@ -53,7 +53,7 @@ type
     procedure write(V: TValue);
   end;
 
-procedure printValue(const V: TValue);
+procedure printValue(const V: TValue; const err: Boolean = false);
 function isFalsey(const V: TValue): Boolean;
 function valuesEqual(const A, B: TValue): Boolean;
 
@@ -80,13 +80,13 @@ uses
 const
   b_to_s: array[Boolean] of string = ('false', 'true');
 
-procedure printValue(const V: TValue);
+procedure printValue(const V: TValue; const err: Boolean);
 begin
   case V.type_ of
-    VAL_BOOL: print(b_to_s[V.as_bool]);
-    VAL_NIL: print('nil');
-    VAL_NUMBER: printf('%g',[V.as_number]);
-    VAL_OBJ: printObject(V);
+    VAL_BOOL: print(b_to_s[V.as_bool], err);
+    VAL_NIL: print('nil', err);
+    VAL_NUMBER: printf('%g',[V.as_number], err);
+    VAL_OBJ: printObject(V, err);
   end;
 end;
 

@@ -33,7 +33,6 @@ type
     MM: TObjectManager_SI;
 
     procedure ClearTombstones();
-    procedure NewCapacity(const new_capacity: Integer);
     procedure AdjustCapacity(const new_capacity: Integer);
     function findEntry(const key: PObjString): PTableEntry;
   public
@@ -47,6 +46,9 @@ type
     procedure tableAddAll(const from: THashTable);
 
     procedure markTable();
+    {$ifdef DEBUG_HASH_TABLE}
+    procedure printTable(const printEmpty: boolean);
+    {$endif}
   end;
 
 implementation
@@ -68,6 +70,60 @@ const
 
   HT_PROBE_GROW_BASE = 32;
   HT_PROBE_GROW_FACTOR = 2;
+
+type
+  TTableValues = record
+    Entries: PTableEntry;
+    Capacity: Integer;
+    GrowThreshold: Integer;
+    ShrinkThreshold: Integer;
+    TombstoneThreshold: Integer;
+    ProbeStep: Integer;
+  end;
+
+procedure NewTableValues(const MM: TMemoryManager; const new_capacity: Integer; out Values: TTableValues);
+var
+  probe_grow: Integer;
+begin
+  Values.Capacity := new_capacity or 1; // let new capacity be odd
+  Values.ProbeStep := 1; // linear probe at low capacity
+  probe_grow := Values.Capacity div HT_PROBE_GROW_BASE;
+  while probe_grow > 0 do
+  begin
+    probe_grow := probe_grow div HT_PROBE_GROW_FACTOR;
+    Inc(Values.ProbeStep);
+  end;
+  if (Values.ProbeStep mod 2) = 1 then // probe step is odd, make odd capacity even
+    inc(Values.Capacity);
+
+  // zeroing memory will set value type to VAL_NIL, which is defined as = 0
+  Values.Entries := MM.ALLOC_AND_ZERO_ARRAY(Values.Capacity, entrySize);
+
+  Values.GrowThreshold := Trunc(Values.Capacity * HT_MAX_LOAD);
+  Values.TombstoneThreshold := Trunc(Values.Capacity * HT_TOMBSTONE_LOAD);
+  if Values.Capacity < HT_MIN_CAPACITY then
+    Values.ShrinkThreshold := 0
+  else
+    Values.ShrinkThreshold := Trunc(Values.Capacity * HT_MIN_LOAD);
+end;
+
+procedure putEntry(const dest: TTableValues; const source: TTableEntry);
+var
+  idx: integer;
+  destEntry: PTableEntry;
+begin
+  idx := Integer(source.key^.hash) mod dest.Capacity;
+  while true do
+  begin
+    destEntry := dest.Entries + idx;
+    if (destEntry^.key = source.key) or (destEntry^.key = nil) then
+    begin
+      destEntry^ := source;
+      Exit;
+    end;
+    idx := (idx + dest.ProbeStep) mod dest.Capacity;
+  end;
+end;
 
 { THashTable }
 
@@ -121,34 +177,11 @@ begin
   {$endif}
 end;
 
-procedure THashTable.NewCapacity(const new_capacity: Integer);
-var
-  probe_grow: Integer;
-begin
-  FCapacity := new_capacity or 1; // let new capacity be odd
-  FProbeStep := 1; // linear probe at low capacity
-  probe_grow := FCapacity div HT_PROBE_GROW_BASE;
-  while probe_grow > 0 do
-  begin
-    probe_grow := probe_grow div HT_PROBE_GROW_FACTOR;
-    Inc(FProbeStep);
-  end;
-  if (FProbeStep and 1) = 1 then // probe step is odd, make odd capacity even
-    inc(FCapacity);
-  // zeroing memory will set value type to VAL_NIL, which is defined as = 0
-  FEntries := MM.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
-  FGrowThreshold := Trunc(FCapacity * HT_MAX_LOAD);
-  FTombstoneThreshold := Trunc(FCapacity * HT_TOMBSTONE_LOAD);
-  if FCapacity < HT_MIN_CAPACITY then
-    FShrinkThreshold := 0
-  else
-    FShrinkThreshold := Trunc(FCapacity * HT_MIN_LOAD);
-end;
-
 procedure THashTable.AdjustCapacity(const new_capacity: Integer);
 var
-  old_capacity, i: Integer;
-  old_list, source, dest: PTableEntry;
+  i: Integer;
+  new_table: TTableValues;
+  source: PTableEntry;
 begin
   if new_capacity <= 0 then
   begin
@@ -157,26 +190,25 @@ begin
     {$endif}
     Exit;
   end;
-  // NewCapacity will create new TableEntry array, so we must save old values before calling it
-  old_capacity := FCapacity;
-  old_list := FEntries;
 
-  NewCapacity(new_capacity);
-
-  if old_list = nil then
-    Exit;
+  NewTableValues(MM, new_capacity, new_table);
 
   FTombstoneCount := 0;
   FCount := 0;
-  for i := 0 to old_capacity - 1 do
+  for i := 0 to FCapacity - 1 do
   begin
-    source := old_list + i;
+    source := FEntries + i;
     if source^.key = nil then Continue;
-    dest := findEntry(source^.key);
-    dest^ := source^;
+    putEntry(new_table, source^);
     inc(FCount);
   end;
-  MM.FREE_ARRAY(old_list, old_capacity, entrySize);
+  MM.FREE_ARRAY(FEntries, FCapacity, entrySize);
+  FEntries := new_table.Entries;
+  FCapacity := new_table.Capacity;
+  FProbeStep := new_table.ProbeStep;
+  FGrowThreshold := new_table.GrowThreshold;
+  FShrinkThreshold := new_table.ShrinkThreshold;
+  FTombstoneThreshold := new_table.TombstoneThreshold;
 end;
 
 function THashTable.findEntry(const key: PObjString): PTableEntry;
@@ -314,6 +346,32 @@ begin
     MM.markValue(entry^.value);
   end;
 end;
+
+{$ifdef DEBUG_HASH_TABLE}
+procedure THashTable.printTable(const printEmpty: boolean);
+var
+  i: Integer;
+  entry: PTableEntry;
+begin
+  printf( 'capacity: %d'+NL
+         +'count: %d'+NL
+         +'tomb count: %d'+NL, [FCapacity, FCount, FTombstoneCount], true);
+  for i := 0 to FCapacity - 1 do
+  begin
+    entry := FEntries + i;
+    if entry^.key <> nil then
+    begin
+      printf('key[%3d] ', [i], true);
+      printValue(OBJ_VAL(entry^.key), true);
+      print(' = ', true);
+      printValue(entry^.value, true);
+      print(NL, true);
+    end
+    else if printEmpty then
+      printf('key[%3d] is empty'+NL, [i], true);
+  end;
+end;
+{$endif}
 
 end.
 

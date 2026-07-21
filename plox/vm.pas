@@ -302,12 +302,18 @@ end;
 
 procedure TLoxVM.defineNative(const name: string; const arity: integer; const func: TNativeFn);
 begin
-  push(OBJ_VAL(MM.copyString(PChar(name), length(name))));
-  push(OBJ_VAL(MM.newNative(func)));
-  AS_FUNCTION(stack[1])^.fn.arity := arity;
-  AS_FUNCTION(stack[1])^.fn.name := AS_STRING(stack[0]);
-  globals.tableSet(AS_STRING(stack[0]), stack[1]);
-  popN(2);
+  MM.temporary := PLoxObj(MM.copyString(PChar(name), length(name)));
+  MM.temporary := PLoxObj(MM.newNative(func, PObjString(MM.temporary)));
+  with PObjFunction(MM.temporary)^ do
+  begin
+    fn.arity := arity;
+    globals.tableSet(fn.name, OBJ_VAL(MM.temporary));
+  end;
+  MM.temporary := nil;
+  {$ifdef DEBUG_HASH_TABLE}
+  print('--- globals ---'+NL, true);
+  globals.printTable(True);
+  {$endif}
 end;
 
 procedure TLoxVM.pause(const callback: TProcedureMethod);
@@ -387,13 +393,14 @@ var
     len: Integer;
     s: PChar;
   begin
-    b := AS_STRING(pop());
-    a := AS_STRING(pop());
+    b := AS_STRING(PEEK_v0);
+    a := AS_STRING(PEEK_v1);
     len := a^.length_ + b^.length_;
     s := MM.GROW_ARRAY(nil, 0, len + 1, SizeOf(char));
     memcpy(s, a^.chars, SizeOf(char) * a^.length_);
     memcpy(s + a^.length_, b^.chars, SizeOf(char) * b^.length_);
     s[len] := #0;
+    popN(2);
     push(OBJ_VAL(MM.takeString(s, len)));
   end;
 

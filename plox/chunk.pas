@@ -119,7 +119,7 @@ type
   public
     function newFunction(): PObjFunction;
     function newClosure(const func: TObjFunction): PObjClosure;
-    function newNative(const fn: TNativeFn): PObjFunction;
+    function newNative(const fn: TNativeFn; const name: PObjString): PObjFunction;
     function newUpvalue(const slot: PValue): PObjUpvalue;
   end;
 
@@ -130,7 +130,7 @@ function IS_CLOSURE(const V: TValue): Boolean; inline;
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 function AS_CLOSURE(const V: TValue): PObjClosure; inline;
-procedure printFunction(const V: PObjFunction);
+procedure printFunction(const V: PObjFunction; const err: Boolean = false);
 
 implementation
 
@@ -159,20 +159,29 @@ begin
   Result := PObjClosure(V.as_obj);
 end;
 
-procedure printFunction(const V: PObjFunction);
+procedure printFunction(const V: PObjFunction; const err: Boolean);
 begin
   if V^.fn.name = nil then
-    print('<script>')
+    print('<script>', err)
   else if V^.obj.type_ = OBJ_NATIVE_FN then
-    printf('<nativeFn %s>', [V^.fn.name^.chars])
+    printf('<nativeFn %s>', [V^.fn.name^.chars], err)
   else
-    printf('<fn %s>', [V^.fn.name^.chars]);
+    printf('<fn %s>', [V^.fn.name^.chars], err);
 end;
 
 { TChunk }
 
 procedure TChunk.reference(const countUp: Boolean);
 begin
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+  begin
+    if countUp then
+      printf('%p reference count %d + 1'+NL, [pointer(self), refCount], true)
+    else
+      printf('%p reference count %d - 1'+NL, [pointer(self), refCount], true);
+  end;
+  {$endif}
   if countUp then
     inc(refCount)
   else
@@ -203,8 +212,10 @@ end;
 
 function TChunk.addConstant(const V: TValue): Integer;
 begin
+  MM.temporary := V.as_obj;
   constants.write(V);
   Result := constants.count - 1;
+  MM.temporary := nil;
 end;
 
 procedure TChunk.write(const B: Byte; const line: Integer);
@@ -233,6 +244,7 @@ end;
 
 procedure TChunk.writeConstant(const V: TValue; const line: Integer);
 begin
+  MM.temporary := V.as_obj; // will be reset to nil by addConstant
   if constants.count < 255 then
   begin
     write(OP_CONSTANT, line);
@@ -276,11 +288,12 @@ begin
   Result^.upvalueCount := func.fn.upvalueCount;
 end;
 
-function TObjectManager_Fun.newNative(const fn: TNativeFn): PObjFunction;
+function TObjectManager_Fun.newNative(const fn: TNativeFn;
+  const name: PObjString): PObjFunction;
 begin
   Result := allocateObject(sizeof(TObjFunction), OBJ_NATIVE_FN);
   Result^.fn.arity := 0;
-  Result^.fn.name := nil;
+  Result^.fn.name := name;
   Result^.fn.nativeFn := fn;
 end;
 
