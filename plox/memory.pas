@@ -20,7 +20,11 @@ type
     function reallocate(P: Pointer; const old_size: SizeInt; const new_size: SizeInt): Pointer;
   protected
     collectGarbageProc: TProcedureMethod;
+    bytesAllocated: SizeUInt;
+    nextGC: SizeUInt;
   public
+    constructor Create;
+
     function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer; const size: SizeInt): Pointer;
     function ALLOC_AND_ZERO_ARRAY(const new_count: integer; const size: SizeInt): Pointer;
     procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: SizeInt);
@@ -51,6 +55,7 @@ implementation
 
 const
   MaxWord = $FFFF;
+  GC_HEAP_GROW = $7FFF0;
 
 function GROW_CAPACITY(const old: Integer): Integer;
 begin
@@ -65,18 +70,43 @@ end;
 { TMemoryManager }
 
 procedure TMemoryManager.collectGarbage();
+{$ifdef DEBUG_LOG_GC}
+var
+  before: SizeUInt;
+{$endif}
 begin
+  {$ifdef DEBUG_LOG_GC}
+  before := bytesAllocated;
+  {$endif}
+
   if Assigned(collectGarbageProc) then
     collectGarbageProc();
+
+  if bytesAllocated < GC_HEAP_GROW then
+    nextGC := bytesAllocated * 2
+  else
+    nextGC := bytesAllocated + GC_HEAP_GROW;
+
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    printf('   collected %u bytes (from %u to %u) next at %u'+NL,
+               [before - bytesAllocated, before, bytesAllocated, nextGC], true);
+  {$endif}
 end;
 
 function TMemoryManager.reallocate(P: Pointer; const old_size: SizeInt; const new_size: SizeInt): Pointer;
 begin
+  bytesAllocated := bytesAllocated + (new_size - old_size);
   if new_size > old_size then
   begin
     {$ifdef DEBUG_STRESS_GC}
     if debugStressGC then
       collectGarbage();
+    {$else}
+    if bytesAllocated > nextGC then
+    begin
+      collectGarbage();
+    end;
     {$endif}
   end;
   if new_size = 0 then
@@ -88,6 +118,12 @@ begin
   end;
 
   Result := ReAllocMem(P, new_size);
+end;
+
+constructor TMemoryManager.Create;
+begin
+  bytesAllocated := 0;
+  nextGC := 1024 * 1024;
 end;
 
 function TMemoryManager.GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer;

@@ -30,6 +30,13 @@ Currently completed chapters:
     * Adding inline directive did increase the speed, but not much, now it's just 4 times slower than Python;
     * Adding local IP variable to run() didn't give much speed increase (there is no "register" equivalent in pascal);
 * Closures;
+* Garbage collection;
+  * This chapter exposed a very nasty bug in my code, it looked really small, but could potentially do a lot of harm (even if it's a toy language), I'm glad it's squshed;
+    * There was other bugs with hash tables, but those were very easy to spot just looking at call stack;
+  * Back to the performance problem, I found that I was using 32 bit Lazarus 4.6 while on 64 bit Windows 10, so together with an upgrade to Lazarus 4.8, I switched to 64 bit compiler;
+    * Fib.lox runs nearly 2 times faster than 32 bit variant, still not as fast as Python, but the difference is just 2 times slower now (down from 5 times slower a few chapters back);
+  * Implementing this chapter required a lot of workarounds because free pascal don't allow cyclic dependency in interface section, meaning I can't for example add function like markValue to the interface of memory.pas;
+    * If I'm going to make real compiler/interpreter using pascal, I'll need to think about where to put GC from the very start;
 
 # License
 

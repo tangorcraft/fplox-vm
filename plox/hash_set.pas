@@ -140,6 +140,7 @@ begin
   FCapacity := GROW_CAPACITY(FCapacity + FLinkCount);
   FLinkCount := 0;
 
+  // GC crash on next line, TODO: remake this whole routine
   FList := mem.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
   FGrowThreshold := Trunc(FCapacity * HASHSET_MAX_LOAD);
   if old_list = nil then Exit;

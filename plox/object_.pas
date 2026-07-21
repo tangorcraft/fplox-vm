@@ -264,6 +264,7 @@ end;
 
 constructor TObjectManager.Create;
 begin
+  inherited Create;
   objectsTop := nil;
   firstMarker := nil;
   grayCapacity := 32; // a bit of starting amount
