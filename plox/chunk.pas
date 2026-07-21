@@ -59,12 +59,12 @@ type
     code: PByte;
     constants: TValueArray;
     lines: array of Integer;
-    objs: TObjectManager_SI;
+    MM: TObjectManager_SI;
 
     refCount: Integer;
     procedure reference(const countUp: Boolean);
 
-    constructor Create(const aObjs: TObjectManager_SI);
+    constructor Create(const objMgr: TObjectManager_SI);
     destructor Destroy; override;
 
     function addConstant(const V: TValue): Integer;
@@ -183,14 +183,14 @@ begin
   end;
 end;
 
-constructor TChunk.Create(const aObjs: TObjectManager_SI);
+constructor TChunk.Create(const objMgr: TObjectManager_SI);
 begin
-  inherited Create(aObjs);
+  inherited Create(objMgr);
   Init(SizeOf(Byte));
   code := Grow;
   SetLength(lines, capacity);
-  constants := TValueArray.Create(aObjs);
-  objs := aObjs;
+  constants := TValueArray.Create(objMgr);
+  MM := objMgr;
   refCount := 0;
 end;
 

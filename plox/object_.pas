@@ -17,9 +17,18 @@ type
   end;
   PObjString = ^TObjString;
 
+  PMarker = ^TMarker;
+  TMarker = record
+    markRoots: TProcedureMethod;
+    next: PMarker;
+  end;
+
   { TObjectManager }
 
   TObjectManager = class(TMemoryManager)
+  private
+    firstMarker: PMarker;
+    procedure markRoots();
   protected
     function allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
     procedure freeObject(const O: PLoxObj);
@@ -30,11 +39,15 @@ type
   public
     objectsTop: PLoxObj;
 
+    procedure collectGarbage();
+    procedure registerMarker(const markRootsProc: TProcedureMethod);
+    procedure unregisterMarker(const markRootsProc: TProcedureMethod);
+    procedure markValue(const V: TValue);
+    procedure markObject(const O: PLoxObj);
+
     constructor Create;
     destructor Destroy; override;
   end;
-
-{$inline on}
 
 function OBJ_TYPE(const V: TValue): ObjType; inline;
 function IS_STRING(const V: TValue): Boolean; inline;
@@ -48,6 +61,9 @@ implementation
 
 uses
   chunk;
+
+const
+  markerSize = sizeof(TMarker);
 
 function OBJ_TYPE(const V: TValue): ObjType; inline;
 begin
@@ -68,8 +84,6 @@ function AS_CSTRING(const V: TValue): PChar; inline;
 begin
   Result := PObjString(V.as_obj)^.chars;
 end;
-
-{$inline off}
 
 procedure printObject(const V: TValue);
 begin
@@ -99,10 +113,23 @@ end;
 function obj_type_str(const T: ObjType): string; begin str(T, Result); end;
 {$endif}
 
+procedure TObjectManager.markRoots();
+var
+  M: PMarker;
+begin
+  M := firstMarker;
+  while M <> nil do
+  begin
+    M^.markRoots();
+    M := M^.next;
+  end;
+end;
+
 function TObjectManager.allocateObject(const size: SizeInt; const type_: ObjType): Pointer;
 begin
   Result := ALLOCATE(size);
   PLoxObj(Result)^.type_ := type_;
+  PLoxObj(Result)^.isMarked := false;
   PLoxObj(Result)^.size := size;
   PLoxObj(Result)^.next := objectsTop;
   objectsTop := Result;
@@ -151,17 +178,26 @@ end;
 constructor TObjectManager.Create;
 begin
   objectsTop := nil;
+  firstMarker := nil;
+  collectGarbageProc := @collectGarbage;
 end;
 
 destructor TObjectManager.Destroy;
 var
-  next: PLoxObj;
+  nextO: PLoxObj;
+  nextM: PMarker;
 begin
   while objectsTop <> nil do
   begin
-    next := objectsTop^.next;
+    nextO := objectsTop^.next;
     freeObject(objectsTop);
-    objectsTop := next;
+    objectsTop := nextO;
+  end;
+  while firstMarker <> nil do
+  begin
+    nextM := firstMarker^.next;
+    FREE_(firstMarker, markerSize);
+    firstMarker := nextM;
   end;
   inherited Destroy;
 end;
@@ -183,6 +219,72 @@ begin
   Move(start^, heapChars^, cnt);
   heapChars[len] := #0;
   Result := allocateString(heapChars, len, hash);
+end;
+
+procedure TObjectManager.collectGarbage();
+begin
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    print('-- gc begin'+NL, true);
+  {$endif}
+
+  markRoots();
+
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+    print('-- gc end'+NL, true);
+  {$endif}
+end;
+
+procedure TObjectManager.registerMarker(const markRootsProc: TProcedureMethod);
+var
+  M: PMarker;
+begin
+  M := ALLOCATE(markerSize);
+  M^.markRoots := markRootsProc;
+  M^.next := firstMarker;
+  firstMarker := M;
+end;
+
+procedure TObjectManager.unregisterMarker(const markRootsProc: TProcedureMethod);
+var
+  prev: ^PMarker;
+  curr: PMarker;
+begin
+  prev := @firstMarker;
+  curr := firstMarker;
+  while curr <> nil do
+  begin
+    if curr^.markRoots = markRootsProc then
+    begin
+      prev^ := curr^.next;
+      FREE_(curr, markerSize);
+      Exit;
+    end;
+    prev := @curr^.next;
+    curr := curr^.next;
+  end;
+end;
+
+procedure TObjectManager.markValue(const V: TValue);
+begin
+  if IS_OBJ(V) then
+    markObject(V.as_obj);
+end;
+
+procedure TObjectManager.markObject(const O: PLoxObj);
+begin
+  if O = nil then
+    Exit;
+  {$ifdef DEBUG_LOG_GC}
+  if debugLogGC then
+  begin
+    printf('%p mark ', [O], true);
+    printValue(OBJ_VAL(O));
+    print(NL);
+  end;
+  {$endif}
+  O^.isMarked := True;
 end;
 
 end.

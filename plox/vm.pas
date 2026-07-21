@@ -35,14 +35,16 @@ type
   public
     stack: array[0..STACK_MAX] of TValue;
     stackTop: PValue;
-    objs: TObjectManager_Fun;
+    MM: TObjectManager_Fun;
     globals: THashTable;
     frames: array[0..FRAMES_MAX] of TCallFrame;
     frameCount: Integer;
     openUpvalues: PObjUpvalue;
 
-    pause_callback: TMethod;
+    pause_callback: TProcedureMethod;
     halted: Boolean;
+
+    procedure markRoots();
 
     procedure resetStack;
     procedure push(const V: TValue);
@@ -61,7 +63,7 @@ type
 
     procedure defineNative(const name: string; const arity: integer; const func: TNativeFn);
 
-    procedure pause(const callback: TMethod);
+    procedure pause(const callback: TProcedureMethod);
     function is_paused: boolean;
     procedure stop;
 
@@ -85,6 +87,45 @@ begin
 end;
 
 { TLoxVM }
+
+type
+  TTempUnion = record
+    case Byte of
+    0: (name: PObjString);
+    1: (upval: PObjUpvalue);
+    2: (closure: PObjClosure);
+    3: (func: PObjFunction);
+    4: (B: byte);
+    5: (W: word);
+    6: (D: double);
+    7: (pval: PValue);
+    //8: (val: TValue);
+  end;
+
+procedure TLoxVM.markRoots();
+var
+  temp: TTempUnion;
+  i: Integer;
+begin
+  temp.pval := @stack[0];
+  while temp.pval < stackTop do
+  begin
+    MM.markValue(temp.pval^);
+    inc(temp.pval);
+  end;
+
+  globals.markTable();
+
+  for i := 0 to frameCount - 1 do
+    MM.markObject(PLoxObj(frames[i].closure));
+
+  temp.upval := openUpvalues;
+  while temp.upval <> nil do
+  begin
+    MM.markObject(PLoxObj(temp.upval));
+    temp.upval := temp.upval^.next;
+  end;
+end;
 
 procedure TLoxVM.resetStack;
 begin
@@ -189,7 +230,7 @@ begin
   if (upvalue <> nil) and (upvalue^.location = local) then
     Exit(upvalue);
 
-  Result := objs.newUpvalue(local);
+  Result := MM.newUpvalue(local);
   Result^.next := upvalue;
 
   if prevUpvalue = nil then
@@ -242,9 +283,10 @@ end;
 constructor TLoxVM.Create;
 begin
   resetStack;
-  objs := TObjectManager_Fun.Create;
-  globals := THashTable.Create(objs);
+  MM := TObjectManager_Fun.Create;
+  globals := THashTable.Create(MM);
   openUpvalues := nil;
+  MM.registerMarker(@markRoots);
 
   defineNative('clock', 0, @clockNative);
 end;
@@ -252,21 +294,23 @@ end;
 destructor TLoxVM.Destroy;
 begin
   globals.Free;
-  objs.Free;
+  //MM.unregisterMarker(@markRoots);
+  //we free the memory manager completely anyway
+  MM.Free;
   inherited Destroy;
 end;
 
 procedure TLoxVM.defineNative(const name: string; const arity: integer; const func: TNativeFn);
 begin
-  push(OBJ_VAL(objs.copyString(PChar(name), length(name))));
-  push(OBJ_VAL(objs.newNative(func)));
+  push(OBJ_VAL(MM.copyString(PChar(name), length(name))));
+  push(OBJ_VAL(MM.newNative(func)));
   AS_FUNCTION(stack[1])^.fn.arity := arity;
   AS_FUNCTION(stack[1])^.fn.name := AS_STRING(stack[0]);
   globals.tableSet(AS_STRING(stack[0]), stack[1]);
   popN(2);
 end;
 
-procedure TLoxVM.pause(const callback: TMethod);
+procedure TLoxVM.pause(const callback: TProcedureMethod);
 begin
   pause_callback := callback;
 end;
@@ -286,31 +330,18 @@ var
   func: PObjFunction;
   closure: PObjClosure;
 begin
-  func := compile(source, objs);
+  func := compile(source, MM);
   if func = nil then
     Exit(INTERPRET_COMPILE_ERROR);
 
   push(OBJ_VAL(func));
-  closure := objs.newClosure(func^);
+  closure := MM.newClosure(func^);
   pop();
   push(OBJ_VAL(closure));
   call(closure, 0);
 
   Result := run();
 end;
-
-type
-  TTempUnion = record
-    case Byte of
-    0: (name: PObjString);
-    2: (closure: PObjClosure);
-    3: (func: PObjFunction);
-    4: (B: byte);
-    5: (W: word);
-    6: (D: double);
-    7: (pval: PValue);
-    //8: (val: TValue);
-  end;
 
 function TLoxVM.run: InterpretResult;
 var
@@ -359,11 +390,11 @@ var
     b := AS_STRING(pop());
     a := AS_STRING(pop());
     len := a^.length_ + b^.length_;
-    s := objs.GROW_ARRAY(nil, 0, len + 1, SizeOf(char));
+    s := MM.GROW_ARRAY(nil, 0, len + 1, SizeOf(char));
     memcpy(s, a^.chars, SizeOf(char) * a^.length_);
     memcpy(s + a^.length_, b^.chars, SizeOf(char) * b^.length_);
     s[len] := #0;
-    push(OBJ_VAL(objs.takeString(s, len)));
+    push(OBJ_VAL(MM.takeString(s, len)));
   end;
 
   {$ifdef DEBUG_TRACE_EXECUTION}
@@ -446,7 +477,7 @@ begin
           temp.func := AS_FUNCTION(READ_CONSTANT)
         else
           temp.func := AS_FUNCTION(READ_CONSTANT_LONG);
-        temp.closure := objs.newClosure(temp.func^);
+        temp.closure := MM.newClosure(temp.func^);
         push(OBJ_VAL(temp.closure));
         for i := 0 to temp.closure^.upvalueCount - 1 do
         begin

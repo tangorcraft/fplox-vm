@@ -30,14 +30,14 @@ type
     FProbeStep: Integer;
     FEntries: PTableEntry;
 
-    FObjs: TObjectManager_SI;
+    MM: TObjectManager_SI;
 
     procedure ClearTombstones();
     procedure NewCapacity(const new_capacity: Integer);
     procedure AdjustCapacity(const new_capacity: Integer);
     function findEntry(const key: PObjString): PTableEntry;
   public
-    constructor Create(const aObjs: TObjectManager_SI);
+    constructor Create(const objMgr: TObjectManager_SI);
     destructor Destroy; override;
 
     function tableGet(const key: PObjString; var V: TValue): Boolean;
@@ -45,6 +45,8 @@ type
       const mustExist: Boolean = false): Boolean;
     function tableDelete(const key: PObjString): Boolean;
     procedure tableAddAll(const from: THashTable);
+
+    procedure markTable();
   end;
 
 implementation
@@ -134,7 +136,7 @@ begin
   if (FProbeStep and 1) = 1 then // probe step is odd, make odd capacity even
     inc(FCapacity);
   // zeroing memory will set value type to VAL_NIL, which is defined as = 0
-  FEntries := FObjs.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
+  FEntries := MM.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
   FGrowThreshold := Trunc(FCapacity * HT_MAX_LOAD);
   FTombstoneThreshold := Trunc(FCapacity * HT_TOMBSTONE_LOAD);
   if FCapacity < HT_MIN_CAPACITY then
@@ -174,7 +176,7 @@ begin
     dest^ := source^;
     inc(FCount);
   end;
-  FObjs.FREE_ARRAY(old_list, old_capacity, entrySize);
+  MM.FREE_ARRAY(old_list, old_capacity, entrySize);
 end;
 
 function THashTable.findEntry(const key: PObjString): PTableEntry;
@@ -208,9 +210,9 @@ begin
   end;
 end;
 
-constructor THashTable.Create(const aObjs: TObjectManager_SI);
+constructor THashTable.Create(const objMgr: TObjectManager_SI);
 begin
-  FObjs := aObjs;
+  MM := objMgr;
   FCount := 0;
   FCapacity := 0;
   FGrowThreshold := 0;
@@ -223,7 +225,7 @@ end;
 
 destructor THashTable.Destroy;
 begin
-  FObjs.FREE_ARRAY(FEntries, FCapacity, entrySize);
+  MM.FREE_ARRAY(FEntries, FCapacity, entrySize);
   inherited Destroy;
 end;
 
@@ -297,6 +299,19 @@ begin
     entry := from.FEntries + i;
     if entry^.key <> nil then
       tableSet(entry^.key, entry^.value);
+  end;
+end;
+
+procedure THashTable.markTable();
+var
+  i: Integer;
+  entry: PTableEntry;
+begin
+  for i := 0 to FCapacity - 1 do
+  begin
+    entry := FEntries + i;
+    MM.markObject(PLoxObj(entry^.key));
+    MM.markValue(entry^.value);
   end;
 end;
 

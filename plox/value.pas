@@ -29,6 +29,7 @@ type
   PLoxObj = ^TLoxObj;
   TLoxObj = record
     type_: ObjType;
+    isMarked: boolean;
     size: SizeInt;
     next: PLoxObj;
   end;

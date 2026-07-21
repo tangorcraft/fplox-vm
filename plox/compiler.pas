@@ -81,9 +81,12 @@ type
     parser: TParser;
     parseRules: array[TokenType] of TParseRule;
     current: PCompilerState;
-    FObjs: TObjectManager_Fun;
+    MM: TObjectManager_Fun;
 
     constructor Create(const mgr: TObjectManager_Fun);
+    destructor Destroy; override;
+
+    procedure markCompilerRoots();
 
     function currentChunk: TChunk;
     procedure errorAt(const T: TToken; const msg: PChar);
@@ -179,8 +182,9 @@ constructor TCompiler.Create(const mgr: TObjectManager_Fun);
   end;
 
 begin
-  FObjs := mgr;
+  MM := mgr;
   current := nil;
+  MM.registerMarker(@markCompilerRoots);
   init_rule(TOKEN_LEFT_PAREN   , @grouping, @call  , PREC_CALL);
   init_rule(TOKEN_RIGHT_PAREN  , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_LEFT_BRACE   , nil      , nil    , PREC_NONE);
@@ -221,6 +225,24 @@ begin
   init_rule(TOKEN_WHILE        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_ERROR        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_EOF          , nil      , nil    , PREC_NONE);
+end;
+
+destructor TCompiler.Destroy;
+begin
+  MM.unregisterMarker(@markCompilerRoots);
+  inherited Destroy;
+end;
+
+procedure TCompiler.markCompilerRoots();
+var
+  compiler: PCompilerState;
+begin
+  compiler := current;
+  while compiler <> nil do
+  begin
+    MM.markObject(PLoxObj(compiler^.func));
+    compiler := compiler^.enclosing;
+  end;
 end;
 
 function TCompiler.currentChunk: TChunk;
@@ -393,10 +415,10 @@ begin
   state^.funType := type_;
   state^.localCount := 0;
   state^.scopeDepth := 0;
-  state^.func := FObjs.newFunction();
+  state^.func := MM.newFunction();
   current := state;
   if type_ <> TYPE_SCRIPT then
-    current^.func^.fn.name := FObjs.copyString(parser.previous.start, parser.previous.length);
+    current^.func^.fn.name := MM.copyString(parser.previous.start, parser.previous.length);
 
   local := @current^.locals[current^.localCount];
   inc(current^.localCount);
@@ -456,7 +478,7 @@ end;
 
 function TCompiler.identifierConstant(const name: TToken): Integer;
 begin
-  Result := makeConstant(OBJ_VAL(currentChunk().objs.copyString(name.start, name.length)));
+  Result := makeConstant(OBJ_VAL(currentChunk().MM.copyString(name.start, name.length)));
 end;
 
 procedure TCompiler.addLocal(const name: TToken);
@@ -934,7 +956,7 @@ end;
 
 procedure TCompiler.string_(const canAssign: Boolean);
 begin
-  emitConstant(OBJ_VAL(currentChunk().objs.copyString(parser.previous.start + 1, parser.previous.length - 2)));
+  emitConstant(OBJ_VAL(currentChunk().MM.copyString(parser.previous.start + 1, parser.previous.length - 2)));
 end;
 
 procedure TCompiler.variable(const canAssign: Boolean);

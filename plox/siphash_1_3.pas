@@ -65,8 +65,6 @@ const
   V2_base = UInt64($6C7967656E657261);
   V3_base = UInt64($7465646279746573);
 
-{$inline on}
-
 procedure siphash_1_3(const data: Pointer; const data_len: SizeUInt; const K: Pointer;
   const out_buf: PByte; const out_len: siphash_out_length);
 var

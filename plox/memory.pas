@@ -6,7 +6,7 @@ unit memory;
 interface
 
 uses
-  Classes, SysUtils;
+  Classes, SysUtils, common;
 
 function GROW_CAPACITY(const old: Integer): Integer;
 
@@ -16,15 +16,16 @@ type
 
   TMemoryManager = class
   private
+    procedure collectGarbage();
     function reallocate(P: Pointer; const old_size: SizeInt; const new_size: SizeInt): Pointer;
+  protected
+    collectGarbageProc: TProcedureMethod;
   public
     function GROW_ARRAY(const arr: Pointer; const old_count: integer; const new_count: integer; const size: SizeInt): Pointer;
     function ALLOC_AND_ZERO_ARRAY(const new_count: integer; const size: SizeInt): Pointer;
     procedure FREE_ARRAY(const arr: Pointer; const count: Integer; const size: SizeInt);
     function ALLOCATE(const size: SizeInt): Pointer;
     procedure FREE_(const P: Pointer; const size: SizeInt);
-
-    procedure collectGarbage();
   end;
 
   { TMemArray }
@@ -48,10 +49,6 @@ type
 
 implementation
 
-{$ifdef DEBUG}
-uses common;
-{$endif}
-
 const
   MaxWord = $FFFF;
 
@@ -69,17 +66,8 @@ end;
 
 procedure TMemoryManager.collectGarbage();
 begin
-  {$ifdef DEBUG_LOG_GC}
-  if debugLogGC then
-    print('-- gc begin'+NL, true);
-  {$endif}
-
-  //markRoots();
-
-  {$ifdef DEBUG_LOG_GC}
-  if debugLogGC then
-    print('-- gc end'+NL, true);
-  {$endif}
+  if Assigned(collectGarbageProc) then
+    collectGarbageProc();
 end;
 
 function TMemoryManager.reallocate(P: Pointer; const old_size: SizeInt; const new_size: SizeInt): Pointer;
