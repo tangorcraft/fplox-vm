@@ -98,6 +98,7 @@ end;
 procedure printObject(const V: TValue; const err: Boolean);
 begin
   case OBJ_TYPE(V) of
+    OBJ_CLASS: printf('<class %s>', [AS_CLASS(V)^.name^.chars], err);
     OBJ_NATIVE_FN,
     OBJ_CLOSURE,
     OBJ_FUNCTION: printFunction(AS_FUNCTION(V), err);
@@ -149,8 +150,7 @@ end;
 
 procedure TObjectManager.blackenObject(const obj: PLoxObj);
 var
-  fn: PObjFunction;
-  closure: PObjClosure;
+  tmp: ObjEx;
   i: Integer;
 begin
   {$ifdef DEBUG_LOG_GC}
@@ -162,24 +162,26 @@ begin
   end;
   {$endif}
 
+  tmp.as_obj := obj;
   case obj^.type_ of
+    OBJ_CLASS: begin
+      markObject(PLoxObj(tmp.as_class^.name));
+    end;
     OBJ_NATIVE_FN: begin
-      markObject(PLoxObj( PObjFunction(obj)^.fn.name) );
+      markObject(PLoxObj(tmp.as_func^.fn.name));
     end;
     OBJ_CLOSURE: begin
-      closure := PObjClosure(obj);
-      markObject(PLoxObj(closure^.func.name));
-      markArray(closure^.func.chunk.constants);
-      for i := 0 to closure^.upvalueCount - 1 do
-        markObject(PLoxObj(closure^.upvalues[i]));
+      markObject(PLoxObj(tmp.as_closure^.func.name));
+      markArray(tmp.as_closure^.func.chunk.constants);
+      for i := 0 to tmp.as_closure^.upvalueCount - 1 do
+        markObject(PLoxObj(tmp.as_closure^.upvalues[i]));
     end;
     OBJ_FUNCTION: begin
-      fn := PObjFunction(obj);
-      markObject( PLoxObj(fn^.fn.name) );
-      markArray(fn^.fn.chunk.constants);
+      markObject( PLoxObj(tmp.as_func^.fn.name) );
+      markArray(tmp.as_func^.fn.chunk.constants);
     end;
     OBJ_UPVALUE:
-      markValue(PObjUpvalue(obj)^.closed);
+      markValue(tmp.as_upvalue^.closed);
     //OBJ_STRING: Exit;
   end;
 end;

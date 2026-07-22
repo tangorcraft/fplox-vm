@@ -140,6 +140,7 @@ type
     procedure forStatement();
     procedure statement();
     procedure function_(const type_: TFunctionType);
+    procedure classDeclaration();
     procedure funDeclaration();
     procedure varDeclaration();
     procedure declaration();
@@ -876,6 +877,22 @@ begin
   end;
 end;
 
+procedure TCompiler.classDeclaration();
+var
+  nameConstant: integer;
+begin
+  consume(TOKEN_IDENTIFIER, 'Expect class name.');
+  nameConstant := identifierConstant(parser.previous);
+  declareVariable();
+
+  emitCodeByte(OP_CLASS, nameConstant);
+  defineVariable(nameConstant);
+
+  consume(TOKEN_LEFT_BRACE, 'Expect "{" before class body.');
+
+  consume(TOKEN_RIGHT_BRACE, 'Expect "}" after class body.');
+end;
+
 procedure TCompiler.funDeclaration();
 var
   global: Integer;
@@ -903,7 +920,9 @@ end;
 
 procedure TCompiler.declaration();
 begin
-  if match(TOKEN_FUN) then
+  if match(TOKEN_CLASS) then
+     classDeclaration()
+  else if match(TOKEN_FUN) then
     funDeclaration()
   else if match(TOKEN_VAR) then
     varDeclaration()

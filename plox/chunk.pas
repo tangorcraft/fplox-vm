@@ -21,6 +21,7 @@ type
     OP_CLOSURE_LONG,
     OP_CLOSE_UPVALUE,
     OP_RETURN,
+    OP_CLASS,
     OP_CONSTANT,
     OP_CONSTANT_LONG,
     OP_NIL,
@@ -113,23 +114,40 @@ type
   end;
   PObjClosure = ^TObjClosure;
 
+  TObjClass = record
+    obj: TLoxObj;
+    name: PObjString;
+  end;
+  PObjClass = ^TObjClass;
+
   { TObjectManager_Fun }
 
   TObjectManager_Fun = class(TObjectManager_SI)
   public
+    function newClass(const name: PObjString): PObjClass;
     function newFunction(): PObjFunction;
     function newClosure(const func: TObjFunction): PObjClosure;
     function newNative(const fn: TNativeFn; const name: PObjString): PObjFunction;
     function newUpvalue(const slot: PValue): PObjUpvalue;
   end;
 
-{$inline on}
+  ObjEx = record
+  case Byte of
+  0:(as_obj: PLoxObj);
+  1:(as_string: PObjString);
+  2:(as_closure: PObjClosure);
+  3:(as_func: PObjFunction);
+  4:(as_upvalue: PObjUpvalue);
+  5:(as_class: PObjClass);
+  end;
 
 function IS_FUNCTION(const V: TValue): Boolean; inline;
 function IS_CLOSURE(const V: TValue): Boolean; inline;
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
+function IS_CLASS(const V: TValue): Boolean; inline;
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 function AS_CLOSURE(const V: TValue): PObjClosure; inline;
+function AS_CLASS(const V: TValue): PObjClass; inline;
 procedure printFunction(const V: PObjFunction; const err: Boolean = false);
 
 implementation
@@ -149,6 +167,11 @@ begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_NATIVE_FN);
 end;
 
+function IS_CLASS(const V: TValue): Boolean;
+begin
+  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_CLASS);
+end;
+
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 begin
   Result := PObjFunction(V.as_obj);
@@ -157,6 +180,11 @@ end;
 function AS_CLOSURE(const V: TValue): PObjClosure;
 begin
   Result := PObjClosure(V.as_obj);
+end;
+
+function AS_CLASS(const V: TValue): PObjClass;
+begin
+  Result := PObjClass(V.as_obj);
 end;
 
 procedure printFunction(const V: PObjFunction; const err: Boolean);
@@ -258,6 +286,12 @@ begin
 end;
 
 { TObjectManager_Fun }
+
+function TObjectManager_Fun.newClass(const name: PObjString): PObjClass;
+begin
+  Result := allocateObject(sizeof(TObjClass), OBJ_CLASS);
+  Result^.name := name;
+end;
 
 function TObjectManager_Fun.newFunction(): PObjFunction;
 var
