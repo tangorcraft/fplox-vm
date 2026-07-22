@@ -20,6 +20,8 @@ type
     BRunStop: TButton;
     cbDebugPrintCode: TCheckBox;
     cbDebugTraceExecution: TCheckBox;
+    cbStressGC: TCheckBox;
+    cbLogGC: TCheckBox;
     GroupBoxDebug: TGroupBox;
     MainMenu: TMainMenu;
     MemoLox: TMemo;
@@ -33,6 +35,8 @@ type
     procedure BRunStopClick(Sender: TObject);
     procedure cbDebugPrintCodeChange(Sender: TObject);
     procedure cbDebugTraceExecutionChange(Sender: TObject);
+    procedure cbLogGCChange(Sender: TObject);
+    procedure cbStressGCChange(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -80,8 +84,18 @@ begin
     cbDebugTraceExecution.Checked := false;
     cbDebugTraceExecution.Enabled := false;
     {$endif}
+    {$ifndef DEBUG_STRESS_GC}
+    cbStressGC.Checked := false;
+    cbStressGC.Enabled := false;
+    {$endif}
+    {$ifndef DEBUG_LOG_GC}
+    cbLogGC.Checked := false;
+    cbLogGC.Enabled := false;
+    {$endif}
     debugPrintCode := cbDebugPrintCode.Checked;
     debugTraceExecution := cbDebugTraceExecution.Checked;
+    debugStressGC := cbStressGC.Checked;
+    debugLogGC := cbLogGC.Checked;
   {$endif}
 
   FTests := TStringList.Create;
@@ -140,6 +154,20 @@ procedure TFMain.cbDebugTraceExecutionChange(Sender: TObject);
 begin
   {$ifdef DEBUG}
   debugTraceExecution := cbDebugTraceExecution.Checked;
+  {$endif}
+end;
+
+procedure TFMain.cbLogGCChange(Sender: TObject);
+begin
+  {$ifdef DEBUG}
+  debugLogGC := cbLogGC.Checked;
+  {$endif}
+end;
+
+procedure TFMain.cbStressGCChange(Sender: TObject);
+begin
+  {$ifdef DEBUG}
+  debugStressGC := cbStressGC.Checked;
   {$endif}
 end;
 

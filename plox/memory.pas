@@ -101,13 +101,13 @@ begin
   begin
     {$ifdef DEBUG_STRESS_GC}
     if debugStressGC then
-      collectGarbage();
-    {$else}
+      collectGarbage()
+    else
+    {$endif}
     if bytesAllocated > nextGC then
     begin
       collectGarbage();
     end;
-    {$endif}
   end;
   if new_size = 0 then
   begin

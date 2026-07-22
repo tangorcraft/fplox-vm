@@ -22,21 +22,24 @@ type
   private
     mem: TMemoryManager;
     FList: PKeyEntry;
+    FCapacity: Cardinal;
     FLinkCount: Cardinal; // number of separate linked list entries
     FGrowThreshold: Cardinal;
-    FCapacity: Cardinal;
+
+    FOldList: PKeyEntry;
+    FOldCapacity: Cardinal;
 
     function tableFindKey(const chars: PChar; const len: Integer; const hash: uint32;
       out entry: PKeyEntry): Boolean;
     procedure grow();
-    function newNext(const entry: PKeyEntry): PKeyEntry;
+    function newNext(var next: PKeyEntry): PKeyEntry;
     function tableGetEntry(const chars: PChar; const len: Integer): PKeyEntry;
     procedure freeLinkedList(var top: PKeyEntry);
   public
     constructor Create(const mgr: TMemoryManager);
     destructor Destroy; override;
 
-    procedure tableRemoveWhite();
+    procedure tableRemoveWhite(const List: PKeyEntry; const Capacity: Cardinal);
   end;
 
   { TObjectManager_SI: String Interning}
@@ -59,7 +62,7 @@ implementation
 
 const
   entrySize = SizeOf(TKeyEntry);
-  HASHSET_MAX_LOAD = 0.4; // LinkCount to Capacity ratio
+  HASHSET_MAX_LOAD = 1.4; // LinkCount to Capacity ratio
 
 { TKeyTable }
 
@@ -87,23 +90,19 @@ end;
 
 procedure TKeyTable.grow();
 var
-  old_size, i: Integer;
-  old_list, bin: PKeyEntry;
+  i: Integer;
+  bin: PKeyEntry;
   iter_entry: PKeyEntry;
 
-  function newEntryTop(var top: PKeyEntry): PKeyEntry;
+  function insertFromBin(var next: PKeyEntry): PKeyEntry;
   begin
-    if bin = nil then
-      Result := mem.ALLOCATE(entrySize)
-    else begin
-      Result := bin;
-      bin := bin^.next;
-    end;
-    Result^.next := top;
-    top := Result;
+    Result := bin;
+    bin := bin^.next;
+    Result^.next := next;
+    next := Result;
   end;
 
-  procedure copyEntry(const copy_entry: TKeyEntry);
+  procedure copyListEntry(const copy_entry: TKeyEntry);
   var
     idx: Integer;
     target_entry: PKeyEntry;
@@ -111,62 +110,74 @@ var
     idx := copy_entry.hash mod FCapacity;
     target_entry := FList + idx;
     if target_entry^.key <> nil then
-    begin
-      target_entry := newEntryTop(target_entry^.next);
-      inc(FLinkCount);
+    begin // collision, take linked entry from bin
+      target_entry := insertFromBin(target_entry^.next);
     end;
     target_entry^.key := copy_entry.key;
     target_entry^.hash := copy_entry.hash;
   end;
 
-  procedure copyLinkedList();
+  function moveLinkedEntry(const entry: PKeyEntry): PKeyEntry;
   var
-    tmp_entry, copy_entry: PKeyEntry;
+    idx: Integer;
+    target_entry: PKeyEntry;
   begin
-    copy_entry := iter_entry^.next;
-    while copy_entry <> nil do
-    begin
-      copyEntry(copy_entry^);
-      tmp_entry := copy_entry;
-      copy_entry := tmp_entry^.next; // next iteration
-      tmp_entry^.next := bin; // moving tmp to bin
-      bin := tmp_entry;
+    Result := entry^.next;
+    idx := entry^.hash mod FCapacity;
+    target_entry := FList + idx;
+    if target_entry^.key <> nil then
+    begin // collision, simply insert entry into the new linked list
+      entry^.next := target_entry^.next;
+      target_entry^.next := entry;
+      Exit;
     end;
+    // copy entry into new list
+    target_entry^.key := entry^.key;
+    target_entry^.hash := entry^.hash;
+    // move entry to the bin
+    entry^.next := bin;
+    bin := entry;
   end;
 
 begin
-  old_list := FList;
-  old_size := FCapacity;
-  FCapacity := GROW_CAPACITY(FCapacity + FLinkCount);
-  FLinkCount := 0;
-
-  // GC crash on next line, TODO: remake this whole routine
+  FOldList := FList;
+  FOldCapacity := FCapacity;
+  FCapacity := GROW_CAPACITY(FOldCapacity + FLinkCount);
+  FList := nil;
   FList := mem.ALLOC_AND_ZERO_ARRAY(FCapacity, entrySize);
-  FGrowThreshold := Trunc(FCapacity * HASHSET_MAX_LOAD);
-  if old_list = nil then Exit;
 
   bin := nil;
   // when separately allocated key entry is copied
   // it will be moved to bin, a linked list, instead of being freed
   // if new collisions occur, entries from bin will be used instead of allocating new entry
-  // it is possible that freeing them immediately and allocating new entry as/if needed will be faster
-  for i := 0 to old_size - 1 do
+  // with GC added, avoiding new allocations also avoids potential GC runs
+  // need to be very careful with this routine since GC run can remove items with tableRemoveWhite()
+  for i := 0 to FOldCapacity - 1 do
   begin
-    iter_entry := old_list + i;
-    copyLinkedList();
-    copyEntry(iter_entry^);
+    iter_entry := FOldList + i;
+    // moving a list don't allocate any new entry, GC safe
+    with iter_entry^ do
+      while next <> nil do
+        next := moveLinkedEntry(next);
+    // make sure bin is not empty to prevent allocation (and possible GC run) during copyListEntry
+    if bin = nil then
+      newNext(bin);
+    copyListEntry(iter_entry^);
   end;
-  mem.FREE_ARRAY(old_list, old_size, entrySize);
+  mem.FREE_ARRAY(FOldList, FOldCapacity, entrySize);
+  FOldList := nil;
+  FOldCapacity := 0;
+  FGrowThreshold := Trunc(FCapacity * HASHSET_MAX_LOAD);
   freeLinkedList(bin);
 end;
 
-function TKeyTable.newNext(const entry: PKeyEntry): PKeyEntry;
+function TKeyTable.newNext(var next: PKeyEntry): PKeyEntry;
 begin
   inc(FLinkCount);
   Result := mem.ALLOCATE(entrySize);
-  Result^.next := nil;
+  Result^.next := next;
   Result^.key := nil;
-  entry^.next := Result;
+  next := Result;
 end;
 
 function TKeyTable.tableGetEntry(const chars: PChar; const len: Integer): PKeyEntry;
@@ -179,7 +190,7 @@ begin
   if not tableFindKey(chars, len, hash, Result) then
   begin
     if Result^.key <> nil then
-      Result := newNext(Result);
+      Result := newNext(Result^.next);
     Result^.hash := hash;
   end;
 end;
@@ -193,6 +204,7 @@ begin
     next := top^.next;
     mem.FREE_(top, entrySize);
     top := next;
+    dec(FLinkCount);
   end;
 end;
 
@@ -202,6 +214,8 @@ begin
   FLinkCount := 0;
   FCapacity := 0;
   FList := nil;
+  FOldCapacity := 0;
+  FOldList := nil;
   grow();
 end;
 
@@ -216,16 +230,19 @@ begin
   inherited Destroy;
 end;
 
-procedure TKeyTable.tableRemoveWhite();
+procedure TKeyTable.tableRemoveWhite(const List: PKeyEntry; const Capacity: Cardinal);
 var
   i: integer;
   prev, entry, white, bin: PKeyEntry;
+
 begin
+  if List = nil then
+    Exit;
   bin := nil; // linked list of entries to be freed
-  for i := 0 to FCapacity - 1 do
+  for i := 0 to Capacity - 1 do
   begin
     prev := nil;
-    entry := FList + i;
+    entry := List + i;
     while entry <> nil do
     begin
       if (entry^.key <> nil) and (not entry^.key^.obj.isMarked) then
@@ -288,7 +305,8 @@ end;
 
 procedure TObjectManager_SI.sweepStringInternTable;
 begin
-  FHashSet.tableRemoveWhite();
+  FHashSet.tableRemoveWhite(FHashSet.FList, FHashSet.FCapacity);
+  FHashSet.tableRemoveWhite(FHashSet.FOldList, FHashSet.FOldCapacity);
 end;
 
 function TObjectManager_SI.takeString(const chars: PChar; const len: Integer): PObjString;
