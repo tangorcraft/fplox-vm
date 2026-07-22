@@ -104,7 +104,7 @@ type
     procedure emitCodes(const B1, B2: OpCode);
     procedure emitCodeByte(const B1: OpCode; const B2: Byte);
     procedure emitCodeLong(const B1: OpCode; const B2: Integer);
-    procedure emitCodeVar(const B_short, B_long: OpCode; const B2: Integer);
+    procedure emitIndex(const Idx: Integer; const B: OpCode);
     procedure emitReturn();
     procedure emitConstant(const V: TValue);
     function emitJump(const B: OpCode): Integer;
@@ -352,12 +352,13 @@ begin
   emitLong(B2);
 end;
 
-procedure TCompiler.emitCodeVar(const B_short, B_long: OpCode; const B2: Integer);
+procedure TCompiler.emitIndex(const Idx: Integer; const B: OpCode);
 begin
-  if B2 > $ff then
-    emitCodeLong(B_long, B2)
+  if Idx > $ff then
+    emitCodeLong(OP_INDEX_LONG, Idx)
   else
-    emitCodeByte(B_short, Byte(B2));
+    emitCodeByte(OP_INDEX, Byte(Idx));
+  emitCode(B);
 end;
 
 procedure TCompiler.emitReturn();
@@ -367,8 +368,11 @@ begin
 end;
 
 procedure TCompiler.emitConstant(const V: TValue);
+var
+  constant: Integer;
 begin
-  currentChunk().writeConstant(V, parser.previous.line);
+  constant := makeConstant(V);
+  emitIndex(constant, OP_CONSTANT);
 end;
 
 function TCompiler.emitJump(const B: OpCode): Integer;
@@ -547,7 +551,7 @@ begin
     Exit;
   end;
 
-  emitCodeVar(OP_DEFINE_GLOBAL, OP_DEFINE_GLOBAL_LONG, global);
+  emitIndex(global, OP_DEFINE_GLOBAL);
 end;
 
 function TCompiler.resolveLocal(const compiler: PCompilerState; const name: TToken): integer;
@@ -641,19 +645,23 @@ begin
   else
   begin
     arg := identifierConstant(name);
-    getOp := OP_GET_GLOBAL;
-    setOp := OP_SET_GLOBAL;
+    if canAssign and match(TOKEN_EQUAL) then
+    begin
+      expression();
+      emitIndex(arg, OP_SET_GLOBAL);
+    end
+    else
+      emitIndex(arg, OP_GET_GLOBAL);
+    Exit;
   end;
 
-  // arg from resolveLocal will never exceed UInt8 range
-  // so LONG part of the emit code should never execute for local variables
   if canAssign and match(TOKEN_EQUAL) then
   begin
     expression();
-    emitCodeVar(setOp, OP_SET_GLOBAL_LONG, arg);
+    emitCodeByte(setOp, arg);
   end
   else
-    emitCodeVar(getOp, OP_GET_GLOBAL_LONG, arg);
+    emitCodeByte(getOp, arg);
 end;
 
 function TCompiler.argumentList(): Byte;
@@ -865,7 +873,7 @@ begin
   block();
 
   func := endCompiler();
-  emitCodeVar(OP_CLOSURE, OP_CLOSURE_LONG, makeConstant(OBJ_VAL(func)));
+  emitIndex(makeConstant(OBJ_VAL(func)), OP_CLOSURE);
 
   for i := 0 to func^.fn.upvalueCount - 1 do
   begin

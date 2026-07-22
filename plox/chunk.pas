@@ -17,13 +17,9 @@ type
     OP_JUMP_IF_FALSE_POP,
     OP_LOOP,
     OP_CALL,
-    OP_CLOSURE,
-    OP_CLOSURE_LONG,
     OP_CLOSE_UPVALUE,
     OP_RETURN,
     OP_CLASS,
-    OP_CONSTANT,
-    OP_CONSTANT_LONG,
     OP_NIL,
     OP_TRUE,
     OP_FALSE,
@@ -32,12 +28,6 @@ type
     OP_GET_LOCAL,
     OP_SET_UPVALUE,
     OP_GET_UPVALUE,
-    OP_SET_GLOBAL,
-    OP_SET_GLOBAL_LONG,
-    OP_GET_GLOBAL,
-    OP_GET_GLOBAL_LONG,
-    OP_DEFINE_GLOBAL,
-    OP_DEFINE_GLOBAL_LONG,
     OP_NOT,
     OP_NEGATE,
     OP_EQUAL,
@@ -47,6 +37,15 @@ type
     OP_SUBTRACT,
     OP_MULTIPLY,
     OP_DIVIDE,
+    OP_INDEX,
+    OP_INDEX_LONG,
+    // special OP code that reads an index for the next upcode
+    // must be folloed by one of these OP codes:
+      OP_CONSTANT,
+      OP_CLOSURE,
+      OP_SET_GLOBAL,
+      OP_GET_GLOBAL,
+      OP_DEFINE_GLOBAL,
 
     OP_Invalid
   );
@@ -73,7 +72,6 @@ type
     procedure write(const B: Byte; const line: Integer); overload;
     procedure write(const B: OpCode; const line: Integer); overload;
     procedure write24(const I: Integer; const line: Integer);
-    procedure writeConstant(const V: TValue; const line: Integer);
   end;
 
   TNativeFn = procedure (const args: PValue; const argCount: Integer; var result: TValue);
@@ -240,6 +238,9 @@ end;
 
 function TChunk.addConstant(const V: TValue): Integer;
 begin
+  Result := constants.find(V);
+  if Result <> -1 then
+    Exit;
   MM.temporary := V.as_obj;
   constants.write(V);
   Result := constants.count - 1;
@@ -268,21 +269,6 @@ begin
   write((I shr 16) and $FF, line);
   write((I shr 8) and $FF, line);
   write(I and $FF, line);
-end;
-
-procedure TChunk.writeConstant(const V: TValue; const line: Integer);
-begin
-  MM.temporary := V.as_obj; // will be reset to nil by addConstant
-  if constants.count < 255 then
-  begin
-    write(OP_CONSTANT, line);
-    write(addConstant(V), line);
-  end
-  else
-  begin
-    write(OP_CONSTANT_LONG, line);
-    write24(addConstant(V), line);
-  end;
 end;
 
 { TObjectManager_Fun }

@@ -350,13 +350,15 @@ begin
 end;
 
 function TLoxVM.run: InterpretResult;
+label
+  index_read;
 var
   instruction: OpCode;
   local_ip: PByte;
   frame: PCallFrame;
   valA, valB: TValue;
   temp: TTempUnion;
-  i: Integer;
+  idx: Integer;
 
   function READ_BYTE: Byte; inline;
   begin
@@ -371,6 +373,14 @@ var
     Result := (local_ip[0] shl 8) or local_ip[1];
     Inc(local_ip, 2);
   end;
+
+  function READ_INT24: Integer; inline;
+  begin
+    Result := (local_ip[0] shl 16) or (local_ip[1] shl 8) or local_ip[2];
+    Inc(local_ip, 3);
+  end;
+
+  {$define INDEXED_CONSTANT:=frame^.closure^.func.chunk.constants.values[idx]}
 
   function READ_CONSTANT: TValue; inline;
   begin
@@ -478,22 +488,6 @@ begin
         frame := @frames[frameCount - 1];
         local_ip := frame^.ip;
       end;
-      OP_CLOSURE,
-      OP_CLOSURE_LONG: begin
-        if instruction = OP_CLOSURE then
-          temp.func := AS_FUNCTION(READ_CONSTANT)
-        else
-          temp.func := AS_FUNCTION(READ_CONSTANT_LONG);
-        temp.closure := MM.newClosure(temp.func^);
-        push(OBJ_VAL(temp.closure));
-        for i := 0 to temp.closure^.upvalueCount - 1 do
-        begin
-          if READ_BYTE() = 1 then // isLocal
-            temp.closure^.upvalues[i] := captureUpvalue(frame^.slots + READ_BYTE()) // index
-          else
-            temp.closure^.upvalues[i] := frame^.closure^.upvalues[READ_BYTE()]; // index
-        end;
-      end;
       OP_CLOSE_UPVALUE: begin
         closeUpvalues(stackTop - 1);
         pop();
@@ -512,14 +506,6 @@ begin
         push(valA); // result
         frame := @frames[frameCount - 1];
         local_ip := frame^.ip;
-      end;
-      OP_CONSTANT: begin
-        valA := READ_CONSTANT;
-        push(valA);
-      end;
-      OP_CONSTANT_LONG: begin
-        valA := READ_CONSTANT_LONG;
-        push(valA);
       end;
       OP_NIL: push(NIL_VAL);
       OP_TRUE: push(BOOL_VAL(true));
@@ -540,45 +526,6 @@ begin
       OP_GET_UPVALUE: begin
         temp.B := READ_BYTE; // slot
         push(frame^.closure^.upvalues[temp.B]^.location^);
-      end;
-      OP_SET_GLOBAL,
-      OP_SET_GLOBAL_LONG: begin
-        if instruction = OP_SET_GLOBAL then
-          temp.name := AS_STRING(READ_CONSTANT)
-        else
-          temp.name := AS_STRING(READ_CONSTANT_LONG);
-        // tableSet return True if key is new, i.e. don't exist in hash table
-        // no value is set then if mustExist is also True
-        if globals.tableSet(temp.name, PEEK_v0, true) then
-        begin
-          // so no need for deletion
-          // but is it faster this way?
-          runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
-          Exit(INTERPRET_RUNTIME_ERROR);
-        end;
-      end;
-      OP_GET_GLOBAL,
-      OP_GET_GLOBAL_LONG: begin
-        if instruction = OP_GET_GLOBAL then
-          temp.name := AS_STRING(READ_CONSTANT)
-        else
-          temp.name := AS_STRING(READ_CONSTANT_LONG);
-        if not globals.tableGet(temp.name, valA) then
-        begin
-          runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
-          Exit(INTERPRET_RUNTIME_ERROR);
-        end;
-        push(valA);
-      end;
-      OP_DEFINE_GLOBAL: begin
-        temp.name := AS_STRING(READ_CONSTANT);
-        globals.tableSet(temp.name, PEEK_v0);
-        pop();
-      end;
-      OP_DEFINE_GLOBAL_LONG: begin
-        temp.name := AS_STRING(READ_CONSTANT_LONG);
-        globals.tableSet(temp.name, PEEK_v0);
-        pop();
       end;
       OP_NOT:
         push(BOOL_VAL(isFalsey(pop())));
@@ -630,9 +577,64 @@ begin
         {$define MACRO_VAL:=NUMBER_VAL}
         {$define MACRO_OP:=/}
         {$i vm_binary_op.inc}
-
       {$undef MACRO_VAL}
       {$undef MACRO_OP}
+      OP_INDEX: begin
+        idx := READ_BYTE();
+        goto index_read;
+      end;
+      OP_INDEX_LONG:begin
+        idx := READ_INT24;
+
+index_read:
+    instruction := READ_Code;
+    case instruction of
+
+      OP_CONSTANT: begin
+        push(INDEXED_CONSTANT);
+      end;
+      OP_CLOSURE: begin
+        temp.func := AS_FUNCTION(INDEXED_CONSTANT);
+        temp.closure := MM.newClosure(temp.func^);
+        push(OBJ_VAL(temp.closure));
+        for idx := 0 to temp.closure^.upvalueCount - 1 do
+        begin
+          if READ_BYTE() = 1 then // isLocal
+            temp.closure^.upvalues[idx] := captureUpvalue(frame^.slots + READ_BYTE()) // index
+          else
+            temp.closure^.upvalues[idx] := frame^.closure^.upvalues[READ_BYTE()]; // index
+        end;
+      end;
+      OP_SET_GLOBAL: begin
+        temp.name := AS_STRING(INDEXED_CONSTANT);
+        // tableSet return True if key is new, idx.e. don't exist in hash table
+        // no value is set then if mustExist is also True
+        if globals.tableSet(temp.name, PEEK_v0, true) then
+        begin
+          // so no need for deletion
+          // but is it faster this way?
+          runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+      end;
+      OP_GET_GLOBAL: begin
+        temp.name := AS_STRING(INDEXED_CONSTANT);
+        if not globals.tableGet(temp.name, valA) then
+        begin
+          runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+        push(valA);
+      end;
+      OP_DEFINE_GLOBAL: begin
+        temp.name := AS_STRING(INDEXED_CONSTANT);
+        globals.tableSet(temp.name, PEEK_v0);
+        pop();
+      end;
+
+    end;
+// end index_read
+      end;
     end;
   end;
 end;

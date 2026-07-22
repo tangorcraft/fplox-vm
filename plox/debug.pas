@@ -13,12 +13,6 @@ function disassembleInstruction(const C: TChunk; const offset: integer): integer
 
 implementation
 
-function simpleIntsruction(const name: string; const offset: integer): integer; overload;
-begin
-  print(name+NL);
-  Result := offset + 1;
-end;
-
 function simpleIntsruction(const op: OpCode; const offset: integer): integer; overload;
 var
   name: String;
@@ -59,22 +53,15 @@ begin
   print(NL);
 end;
 
-function closureInstruction(const op: OpCode; const C: TChunk; const offset: integer): Integer;
+function closureInstruction(const op: OpCode; const C: TChunk; const constant: integer; const offset: integer): Integer;
 var
-  constant, i: integer;
+  i: integer;
   name: string;
   func: PObjFunction;
   isLocal, index: integer;
 begin
   Str(op, name);
   Result := offset + 1;
-  constant := C.code[Result];
-  inc(Result);
-  if op = OP_CLOSURE_LONG then
-  begin
-    constant := (constant shl 16) + (C.code[Result] shl 8) + C.code[Result + 1];
-    inc(Result, 2);
-  end;
   print_constant(name, constant, C.constants.values[constant]);
   func := AS_FUNCTION(C.constants.values[constant]);
   for i := 0 to func^.fn.upvalueCount - 1 do
@@ -92,26 +79,28 @@ begin
   end;
 end;
 
-function constantIntsruction(const op: OpCode; const C: TChunk; const offset: integer): integer;
+function indexIntsruction(const op: OpCode; const C: TChunk; out index: integer; const offset: integer): integer;
 var
-  constant: Byte;
   name: string;
 begin
   Str(op, name);
-  constant := C.code[offset+1];
-  print_constant(name, constant, C.constants.values[constant]);
+  index := C.code[offset+1];
   Result := offset + 2;
+  if op = OP_INDEX_LONG then
+  begin
+    index := (index shl 16) + (C.code[offset+2] shl 8) + C.code[offset+3];
+    inc(Result, 2);
+  end;
+  printf('%-16s %4d'+NL, [name, index]);
 end;
 
-function constantLongIntsruction(const op: OpCode; const C: TChunk; const offset: integer): integer;
+function constantIntsruction(const op: OpCode; const C: TChunk; const constant: integer; const offset: integer): integer; overload;
 var
-  constant: integer;
-  name: string;
+  name: String;
 begin
   Str(op, name);
-  constant := (C.code[offset+1] shl 16) + (C.code[offset+2] shl 8) + C.code[offset+3];
   print_constant(name, constant, C.constants.values[constant]);
-  Result := offset + 4;
+  Result := offset + 1;
 end;
 
 procedure disassembleChunk(const C: TChunk; const name: string);
@@ -130,6 +119,7 @@ end;
 function disassembleInstruction(const C: TChunk; const offset: integer): integer;
 var
   instruction: OpCode;
+  indexConstant: Integer;
 begin
   printf('%.4d ', [offset]);
 
@@ -158,16 +148,6 @@ begin
     OP_CLOSE_UPVALUE,
     OP_POP:
       Result := simpleIntsruction(instruction, offset);
-    OP_CONSTANT,
-    OP_SET_GLOBAL,
-    OP_GET_GLOBAL,
-    OP_DEFINE_GLOBAL:
-      Result := constantIntsruction(instruction, C, offset);
-    OP_CONSTANT_LONG,
-    OP_SET_GLOBAL_LONG,
-    OP_GET_GLOBAL_LONG,
-    OP_DEFINE_GLOBAL_LONG:
-      Result := constantLongIntsruction(instruction, C, offset);
     OP_CALL,
     OP_SET_UPVALUE,
     OP_GET_UPVALUE,
@@ -180,9 +160,36 @@ begin
       Result := jumpIntsruction(instruction, 1, C, offset);
     OP_LOOP:
       Result := jumpIntsruction(instruction, -1, C, offset);
-    OP_CLOSURE,
-    OP_CLOSURE_LONG:
-      Result := closureInstruction(instruction, C, offset);
+    OP_INDEX,
+    OP_INDEX_LONG: begin
+      /// Index instruction
+      Result := indexIntsruction(instruction, C, indexConstant, offset);
+
+      printf('%.4d ', [Result]);
+
+      if (Result > 0) and (C.lines[Result] = C.lines[Result-1]) then
+        print('   | ')
+      else
+        printf('%4d ',[C.lines[Result]]);
+
+      instruction := OpCode(C.code[Result]);
+      case instruction of
+        OP_CONSTANT,
+        OP_SET_GLOBAL,
+        OP_GET_GLOBAL,
+        OP_DEFINE_GLOBAL:
+          Result := constantIntsruction(instruction, C, indexConstant, Result);
+        OP_CLOSURE:
+          Result := closureInstruction(instruction, C, indexConstant, Result);
+
+      else
+        begin
+          printf('Unknown opcode %d'+NL, [instruction]);
+          Result := offset + 1;
+        end;
+      end;
+      /// Index instruction end
+    end;
 
   else
     begin

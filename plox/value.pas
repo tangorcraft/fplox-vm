@@ -51,7 +51,8 @@ type
 
     constructor Create(const mgr: TMemoryManager);
 
-    procedure write(V: TValue);
+    procedure write(const V: TValue);
+    function find(const V: TValue): Integer;
   end;
 
 procedure printValue(const V: TValue; const err: Boolean = false);
@@ -65,8 +66,6 @@ const
   NIL_VAL: TValue = (type_: VAL_NIL; as_number: 0.0;);
   TRUE_VAL: TValue = (type_: VAL_BOOL; as_bool: true;);
   FALSE_VAL: TValue = (type_: VAL_BOOL; as_bool: false;);
-
-{$inline on}
 
 function IS_BOOL(const V: TValue): Boolean; inline;
 function IS_NUMBER(const V: TValue): Boolean; inline;
@@ -148,8 +147,6 @@ begin
   Result := V.type_ = VAL_OBJ;
 end;
 
-{$inline off}
-
 { TValueArray }
 
 constructor TValueArray.Create(const mgr: TMemoryManager);
@@ -159,12 +156,22 @@ begin
   values := Grow;
 end;
 
-procedure TValueArray.write(V: TValue);
+procedure TValueArray.write(const V: TValue);
 begin
   if capacity < (count + 1) then
     values := Grow;
   values[count] := V;
   inc(count);
+end;
+
+function TValueArray.find(const V: TValue): Integer;
+var
+  i: Integer;
+begin
+  for i := 0 to count - 1 do
+    if valuesEqual(values[i], V) then
+      Exit(i);
+  Result := -1;
 end;
 
 end.
