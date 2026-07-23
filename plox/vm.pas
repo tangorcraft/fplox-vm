@@ -267,7 +267,7 @@ begin
   for i := frameCount - 1 downto 0 do
   begin
     frame := @frames[i];
-    func := @frame^.closure^.func;
+    func := PObjFunction(frame^.closure);
     instruction := SizeInt(frame^.ip - func^.fn.chunk.code) - 1;
     line := func^.fn.chunk.lines[instruction];
     printf('[line %d] in ', [line], true);

@@ -893,7 +893,7 @@ begin
   nameConstant := identifierConstant(parser.previous);
   declareVariable();
 
-  emitCodeByte(OP_CLASS, nameConstant);
+  emitIndex(nameConstant, OP_CLASS);
   defineVariable(nameConstant);
 
   consume(TOKEN_LEFT_BRACE, 'Expect "{" before class body.');
