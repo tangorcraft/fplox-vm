@@ -200,6 +200,7 @@ begin
           Result := constantIntsruction(instruction, C, indexConstant, Result);
         OP_CLOSURE:
           Result := closureInstruction(instruction, C, indexConstant, Result);
+        OP_SUPER_INVOKE,
         OP_INVOKE:
           Result := invokeIntsruction(instruction, C, indexConstant, Result);
 

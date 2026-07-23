@@ -607,7 +607,7 @@ begin
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
         temp.klass := AS_CLASS(PEEK_v0); // subclass
-        AS_CLASS(PEEK_v1)^.methods.tableAddAll(temp.klass^.methods);
+        temp.klass^.methods.tableAddAll(AS_CLASS(PEEK_v1)^.methods);
         POP_1; // subclass
       end;
       OP_CLOSE_UPVALUE: begin
@@ -775,6 +775,15 @@ index_read:
         frame^.ip := local_ip; // this is needed for possible runtimeError call from bindMethod
         if not bindMethod(temp.klass, READ_STRING) then
           Exit(INTERPRET_RUNTIME_ERROR);
+      end;
+      OP_SUPER_INVOKE: begin
+        //method := READ_STRING;
+        temp.B := READ_BYTE();
+        frame^.ip := local_ip;
+        if not invokeFromClass(AS_CLASS(pop()), READ_STRING, temp.B) then
+          Exit(INTERPRET_RUNTIME_ERROR);
+        frame := @frames[frameCount - 1];
+        local_ip := frame^.ip;
       end;
       OP_SET_PORPERTY: begin
         if not IS_INSTANCE(PEEK_v1) then

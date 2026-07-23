@@ -1085,6 +1085,7 @@ end;
 procedure TCompiler.super_(const canAssign: Boolean);
 var
   name: Integer;
+  argCount: Byte;
 begin
   if currentClass = nil then
     error('Can''t use "super" outside of a class.')
@@ -1096,8 +1097,18 @@ begin
   name := identifierConstant(parser.previous);
 
   namedVariable(syntheticToken('this'), false);
-  namedVariable(syntheticToken('super'), false);
-  emitIndex(name, OP_GET_SUPER);
+  if match(TOKEN_LEFT_PAREN) then
+  begin
+    argCount := argumentList();
+    namedVariable(syntheticToken('super'), false);
+    emitIndex(name, OP_SUPER_INVOKE);
+    emitByte(argCount);
+  end
+  else
+  begin
+    emitIndex(name, OP_GET_SUPER);
+    namedVariable(syntheticToken('super'), false);
+  end;
 end;
 
 procedure TCompiler.unary(const canAssign: Boolean);

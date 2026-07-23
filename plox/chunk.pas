@@ -50,6 +50,7 @@ type
       OP_METHOD,
       OP_INVOKE,
       OP_GET_SUPER,
+      OP_SUPER_INVOKE,
       OP_SET_PORPERTY,
       OP_GET_PORPERTY,
 
