@@ -99,7 +99,7 @@ type
     5: (W: word);
     6: (D: double);
     7: (pval: PValue);
-    //8: (val: TValue);
+    8: (instance: PObjInstance);
   end;
 
 procedure TLoxVM.markRoots();
@@ -206,6 +206,10 @@ function TLoxVM.callValue(const callee: TValue; const argCount: Integer): Boolea
 begin
   if IS_OBJ(callee) then
     case OBJ_TYPE(callee) of
+      OBJ_CLASS: begin
+        stackTop[-argCount - 1] := OBJ_VAL(MM.newInstance_(AS_CLASS(callee)));
+        Exit(true);
+      end;
       OBJ_CLOSURE:
         Exit(call(AS_CLOSURE(callee), argCount));
       OBJ_NATIVE_FN:
@@ -381,21 +385,7 @@ var
   end;
 
   {$define INDEXED_CONSTANT:=frame^.closure^.func.chunk.constants.values[idx]}
-
-  function READ_CONSTANT: TValue; inline;
-  begin
-    Result := frame^.closure^.func.chunk.constants.values[local_ip^];
-    Inc(local_ip);
-  end;
-
-  function READ_CONSTANT_LONG: TValue;
-  var
-    index: integer;
-  begin
-    index := (local_ip[0] shl 16) or (local_ip[1] shl 8) or local_ip[2];
-    Inc(local_ip, 3);
-    Result := frame^.closure^.func.chunk.constants.values[index];
-  end;
+  {$define READ_STRING:=PObjString(INDEXED_CONSTANT.as_obj)}
 
   procedure concatenate();
   var
@@ -606,7 +596,7 @@ index_read:
         end;
       end;
       OP_SET_GLOBAL: begin
-        temp.name := AS_STRING(INDEXED_CONSTANT);
+        temp.name := READ_STRING;
         // tableSet return True if key is new, idx.e. don't exist in hash table
         // no value is set then if mustExist is also True
         if globals.tableSet(temp.name, PEEK_v0, true) then
@@ -618,7 +608,7 @@ index_read:
         end;
       end;
       OP_GET_GLOBAL: begin
-        temp.name := AS_STRING(INDEXED_CONSTANT);
+        temp.name := READ_STRING;
         if not globals.tableGet(temp.name, valA) then
         begin
           runtimeError('Undefined variable "%s".',[temp.name^.chars], local_ip);
@@ -627,9 +617,45 @@ index_read:
         push(valA);
       end;
       OP_DEFINE_GLOBAL: begin
-        temp.name := AS_STRING(INDEXED_CONSTANT);
+        temp.name := READ_STRING;
         globals.tableSet(temp.name, PEEK_v0);
         pop();
+      end;
+      OP_CLASS: begin
+        push(OBJ_VAL(MM.newClass(READ_STRING)));
+      end;
+      OP_SET_PORPERTY: begin
+        if not IS_INSTANCE(PEEK_v1) then
+        begin
+          runtimeError('Only instances have properties.',[],local_ip);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+        temp.instance := AS_INSTANCE(PEEK_v1);
+        temp.instance^.fields.tableSet(READ_STRING, PEEK_v0);
+        valA := PEEK_v0;
+        popN(2);
+        push(valA);
+      end;
+      OP_GET_PORPERTY: begin
+        if not IS_INSTANCE(PEEK_v0) then
+        begin
+          runtimeError('Only instances have properties.',[],local_ip);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+        temp.instance := AS_INSTANCE(PEEK_v0);
+        //temp.name := READ_STRING;
+
+        if temp.instance^.fields.tableGet(READ_STRING, valA) then
+        begin
+          pop(); // instance
+          push(valA);
+        end
+        else
+        begin
+          // since READ_STRING uses idx variable that don't change it can be reused
+          runtimeError('Undefined property "%s".', [READ_STRING^.chars], local_ip);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
       end;
 
     end;

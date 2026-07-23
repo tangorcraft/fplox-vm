@@ -154,6 +154,7 @@ type
     procedure binary(const canAssign: Boolean);
     procedure grouping(const canAssign: Boolean);
     procedure call(const canAssign: Boolean);
+    procedure dot(const canAssign: Boolean);
 
     procedure and_(const canAssign: Boolean);
     procedure or_(const canAssign: Boolean);
@@ -191,7 +192,7 @@ begin
   init_rule(TOKEN_LEFT_BRACE   , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_RIGHT_BRACE  , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_COMMA        , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_DOT          , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_DOT          , nil      , @dot   , PREC_CALL);
   init_rule(TOKEN_MINUS        , @unary   , @binary, PREC_TERM);
   init_rule(TOKEN_PLUS         , nil      , @binary, PREC_TERM);
   init_rule(TOKEN_SEMICOLON    , nil      , nil    , PREC_NONE);
@@ -1038,6 +1039,24 @@ var
 begin
   argCount := argumentList();
   emitCodeByte(OP_CALL, argCount);
+end;
+
+procedure TCompiler.dot(const canAssign: Boolean);
+var
+  name: Integer;
+begin
+  consume(TOKEN_IDENTIFIER, 'Expect property name after ".".');
+  name := identifierConstant(parser.previous);
+
+  if canAssign and match(TOKEN_EQUAL) then
+  begin
+    expression();
+    emitIndex(name, OP_SET_PORPERTY);
+  end
+  else
+  begin
+    emitIndex(name, OP_GET_PORPERTY);
+  end;
 end;
 
 procedure TCompiler.and_(const canAssign: Boolean);

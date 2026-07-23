@@ -6,7 +6,7 @@ unit lox_main;
 interface
 
 uses
-  Classes, SysUtils, vm, chunk, debug, common;
+  Classes, SysUtils, vm, common;
 
 type
 

@@ -6,7 +6,7 @@ unit chunk;
 interface
 
 uses
-  Classes, SysUtils, hash_set, object_, value, memory, common;
+  Classes, SysUtils, hash_table, hash_set, object_, value, memory, common;
 
 type
   OpCode = (
@@ -46,6 +46,8 @@ type
       OP_GET_GLOBAL,
       OP_DEFINE_GLOBAL,
       OP_CLASS,
+      OP_SET_PORPERTY,
+      OP_GET_PORPERTY,
 
     OP_Invalid
   );
@@ -118,11 +120,20 @@ type
   end;
   PObjClass = ^TObjClass;
 
+  TObjInstance = record
+    obj: TLoxObj;
+    klass: PObjClass;
+    fields: THashTable;
+  end;
+  PObjInstance = ^TObjInstance;
+
   { TObjectManager_Fun }
 
   TObjectManager_Fun = class(TObjectManager_SI)
   public
     function newClass(const name: PObjString): PObjClass;
+    function newInstance_(const klass: PObjClass): PObjInstance;
+
     function newFunction(): PObjFunction;
     function newClosure(const func: TObjFunction): PObjClosure;
     function newNative(const fn: TNativeFn; const name: PObjString): PObjFunction;
@@ -137,15 +148,19 @@ type
   3:(as_func: PObjFunction);
   4:(as_upvalue: PObjUpvalue);
   5:(as_class: PObjClass);
+  6:(as_instance: PObjInstance);
   end;
 
 function IS_FUNCTION(const V: TValue): Boolean; inline;
 function IS_CLOSURE(const V: TValue): Boolean; inline;
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
 function IS_CLASS(const V: TValue): Boolean; inline;
+function IS_INSTANCE(const V: TValue): Boolean; inline;
+
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 function AS_CLOSURE(const V: TValue): PObjClosure; inline;
 function AS_CLASS(const V: TValue): PObjClass; inline;
+function AS_INSTANCE(const V: TValue): PObjInstance; inline;
 procedure printFunction(const V: PObjFunction; const err: Boolean = false);
 
 implementation
@@ -170,6 +185,11 @@ begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_CLASS);
 end;
 
+function IS_INSTANCE(const V: TValue): Boolean;
+begin
+  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_INSTANCE);
+end;
+
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 begin
   Result := PObjFunction(V.as_obj);
@@ -183,6 +203,11 @@ end;
 function AS_CLASS(const V: TValue): PObjClass;
 begin
   Result := PObjClass(V.as_obj);
+end;
+
+function AS_INSTANCE(const V: TValue): PObjInstance;
+begin
+  Result := PObjInstance(V.as_obj);
 end;
 
 procedure printFunction(const V: PObjFunction; const err: Boolean);
@@ -277,6 +302,13 @@ function TObjectManager_Fun.newClass(const name: PObjString): PObjClass;
 begin
   Result := allocateObject(sizeof(TObjClass), OBJ_CLASS);
   Result^.name := name;
+end;
+
+function TObjectManager_Fun.newInstance_(const klass: PObjClass): PObjInstance;
+begin
+  Result := allocateObject(sizeof(TObjInstance), OBJ_INSTANCE);
+  Result^.klass := klass;
+  Result^.fields := THashTable.Create(Self);
 end;
 
 function TObjectManager_Fun.newFunction(): PObjFunction;

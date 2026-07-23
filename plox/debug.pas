@@ -174,9 +174,12 @@ begin
 
       instruction := OpCode(C.code[Result]);
       case instruction of
+        OP_CLASS,
         OP_CONSTANT,
         OP_SET_GLOBAL,
         OP_GET_GLOBAL,
+        OP_SET_PORPERTY,
+        OP_GET_PORPERTY,
         OP_DEFINE_GLOBAL:
           Result := constantIntsruction(instruction, C, indexConstant, Result);
         OP_CLOSURE:

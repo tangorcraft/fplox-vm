@@ -99,6 +99,7 @@ procedure printObject(const V: TValue; const err: Boolean);
 begin
   case OBJ_TYPE(V) of
     OBJ_CLASS: printf('<class %s>', [AS_CLASS(V)^.name^.chars], err);
+    OBJ_INSTANCE: printf('<instance of %s>', [AS_INSTANCE(V)^.klass^.name^.chars], err);
     OBJ_NATIVE_FN,
     OBJ_CLOSURE,
     OBJ_FUNCTION: printFunction(AS_FUNCTION(V), err);
@@ -166,6 +167,10 @@ begin
   case obj^.type_ of
     OBJ_CLASS: begin
       markObject(PLoxObj(tmp.as_class^.name));
+    end;
+    OBJ_INSTANCE: begin
+      markObject(PLoxObj(tmp.as_instance^.klass));
+      tmp.as_instance^.fields.markTable();
     end;
     OBJ_NATIVE_FN: begin
       markObject(PLoxObj(tmp.as_func^.fn.name));
@@ -237,6 +242,9 @@ begin
   {$endif}
 
   case O^.type_ of
+    OBJ_INSTANCE: begin
+      PObjInstance(O)^.fields.Free;
+    end;
     OBJ_FUNCTION: begin
       PObjFunction(O)^.fn.chunk.reference(false);
     end;
@@ -367,7 +375,7 @@ end;
 
 procedure TObjectManager.markValue(const V: TValue);
 begin
-  if IS_OBJ(V) then
+  if V.type_ = VAL_OBJ then
     markObject(V.as_obj);
 end;
 
