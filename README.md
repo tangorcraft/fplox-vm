@@ -40,6 +40,7 @@ Currently completed chapters:
 * Classes and instances;
   * Added hasField native function to check if instance has a field;
   * Added a way for native functions to trigger runtime error;
+* Methods and initializers;
 
 # License
 
