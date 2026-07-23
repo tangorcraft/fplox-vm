@@ -40,6 +40,7 @@ type
     destructor Destroy; override;
 
     function tableGet(const key: PObjString; var V: TValue): Boolean;
+    function tableFind(const key: PObjString): Boolean;
     function tableSet(const key: PObjString; const V: TValue;
       const mustExist: Boolean = false): Boolean;
     function tableDelete(const key: PObjString): Boolean;
@@ -143,7 +144,7 @@ begin
     iter := FEntries + i;
     if iter^.key = nil then // empty or tombstone
     begin
-      if not IS_NIL(iter^.value) then // tombstone
+      if not (iter^.value.IS_NIL_VAL) then // tombstone
       begin
         iter^.value := NIL_VAL; // make it empty
         Dec(FCount);
@@ -157,7 +158,7 @@ begin
         dest := FEntries + idx;
         if dest^.key = nil then // desired position is empty
         begin
-          if not IS_NIL(dest^.value) then // tombstone
+          if not (dest^.value.IS_NIL_VAL) then // tombstone
           begin
             Dec(FCount);
             Dec(FTombstoneCount);
@@ -225,7 +226,7 @@ begin
       Exit
     else if Result^.key = nil then
     begin
-      if IS_NIL(Result^.value) then
+      if (Result^.value.IS_NIL_VAL) then
       begin
         // empty entry return tombstone if it's not nil
         if tombstone <> nil then
@@ -276,6 +277,17 @@ begin
   Result := True;
 end;
 
+function THashTable.tableFind(const key: PObjString): Boolean;
+begin
+  if FCount = 0 then
+    Exit(false);
+
+  if findEntry(key)^.key = nil then
+    Exit(false);
+
+  Result := True;
+end;
+
 function THashTable.tableSet(const key: PObjString; const V: TValue;
   const mustExist: Boolean): Boolean;
 var
@@ -292,7 +304,7 @@ begin
     // maybe I should change the meaning of this function return value
     if mustExist then
       Exit;
-    if IS_NIL(entry^.value) then
+    if (entry^.value.IS_NIL_VAL) then
       inc(FCount) // new entry is not a tombstone
     else
       dec(FTombstoneCount);

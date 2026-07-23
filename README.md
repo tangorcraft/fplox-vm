@@ -37,6 +37,9 @@ Currently completed chapters:
     * Fib.lox runs nearly 2 times faster than 32 bit variant, still not as fast as Python, but the difference is just 2 times slower now (down from 5 times slower a few chapters back);
   * Implementing this chapter required a lot of workarounds because free pascal don't allow cyclic dependency in interface section, meaning I can't for example add function like markValue to the interface of memory.pas;
     * If I'm going to make real compiler/interpreter using pascal, I'll need to think about where to put GC from the very start;
+* Classes and instances;
+  * Added hasField native function to check if instance has a field;
+  * Added a way for native functions to trigger runtime error;
 
 # License
 

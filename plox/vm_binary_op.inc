@@ -1,5 +1,5 @@
 begin
-  if not (IS_NUMBER(PEEK_v0) and IS_NUMBER(PEEK_v1)) then
+  if not ((PEEK_v0.IS_NUMBER_VAL) and (PEEK_v1.IS_NUMBER_VAL)) then
   begin
     runtimeError('Operands must be numbers.',[], local_ip);
     Exit(INTERPRET_RUNTIME_ERROR);

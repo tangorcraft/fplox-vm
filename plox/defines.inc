@@ -17,3 +17,10 @@
 
 {$define USE_SIPHASH} // use FNV_1a hash if not defined
 
+// global macros defines
+{$define IS_BOOL_VAL:=type_=VAL_BOOL}
+{$define IS_NUMBER_VAL:=type_=VAL_NUMBER}
+{$define IS_NIL_VAL:=type_=VAL_NIL}
+{$define IS_OBJ_VAL:=type_=VAL_OBJ}
+{$define IS_ERROR_VAL:=type_=VAL_ERROR_MSG}
+

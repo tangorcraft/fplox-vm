@@ -86,6 +86,28 @@ begin
   result := NUMBER_VAL(Time() * SecsPerDay);
 end;
 
+procedure hasFieldNative(const args: PValue; const argCount: Integer; var result: TValue);
+var
+  instance: PObjInstance;
+  field: PObjString;
+begin
+  result := FALSE_VAL;
+  if not IS_INSTANCE(args[0]) then
+  begin
+    result := ERROR_MSG_VAL('First argument is not an instance.');
+    Exit;
+  end;
+  if not IS_STRING(args[1]) then
+  begin
+    result := ERROR_MSG_VAL('Second argument is not a field name string.');
+    Exit;
+  end;
+  instance := AS_INSTANCE(args[0]);
+  field := AS_STRING(args[1]);
+  if instance^.fields.tableFind(field) then
+    result := TRUE_VAL;
+end;
+
 { TLoxVM }
 
 type
@@ -186,6 +208,7 @@ end;
 function TLoxVM.callNative(const func: PObjFunction; const argCount: Integer): Boolean;
 var
   retVal: TValue;
+  errorMsg: string;
 begin
   // can set arity to -1 for native function to accept any number of arguments
   // since native function can't access VM object, it can't generate lox runtime errors
@@ -197,6 +220,12 @@ begin
 
   retVal := NIL_VAL;
   func^.fn.nativeFn(stackTop - argCount, argCount, retVal);
+  if (retVal.IS_ERROR_VAL) then
+  begin
+    errorMsg := ERROR_MSG_GET(retVal);
+    runtimeError('Native function "%s" error: %s', [func^.fn.name^.chars, errorMsg]);
+    Exit(false);
+  end;
   dec(stackTop, argCount + 1);
   push(retVal);
   Result := True;
@@ -204,7 +233,7 @@ end;
 
 function TLoxVM.callValue(const callee: TValue; const argCount: Integer): Boolean;
 begin
-  if IS_OBJ(callee) then
+  if (callee.IS_OBJ_VAL) then
     case OBJ_TYPE(callee) of
       OBJ_CLASS: begin
         stackTop[-argCount - 1] := OBJ_VAL(MM.newInstance_(AS_CLASS(callee)));
@@ -293,6 +322,7 @@ begin
   MM.registerMarker(@markRoots);
 
   defineNative('clock', 0, @clockNative);
+  defineNative('hasField', 2, @hasFieldNative);
 end;
 
 destructor TLoxVM.Destroy;
@@ -521,7 +551,7 @@ begin
         push(BOOL_VAL(isFalsey(pop())));
       OP_NEGATE: begin
         temp.pval := PEEK_p0;
-        if not IS_NUMBER(temp.pval^) then
+        if not (temp.pval^.IS_NUMBER_VAL) then
         begin
           runtimeError('Operand must be a number.',[], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
@@ -544,7 +574,7 @@ begin
       OP_ADD: begin
         if IS_STRING(PEEK_v0) and IS_STRING(PEEK_v1) then
           concatenate()
-        else if IS_NUMBER(PEEK_v0) and IS_NUMBER(PEEK_v1) then
+        else if (PEEK_v0.IS_NUMBER_VAL) and (PEEK_v1.IS_NUMBER_VAL) then
         begin
           valB := pop();
           valA := pop();

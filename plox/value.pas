@@ -14,6 +14,7 @@ type
     VAL_BOOL,
     VAL_NUMBER,
     VAL_OBJ,
+    VAL_ERROR_MSG, // native functions can return this to indicate runtime error
 
     VAL_Invalid
   );
@@ -35,6 +36,11 @@ type
     size: SizeInt;
     next: PLoxObj;
   end;
+
+  TErrorMsg = record
+    message: string;
+  end;
+  PErrorMsg = ^TErrorMsg;
 
   TValue = record
     case type_: ValueType of
@@ -63,15 +69,13 @@ function valuesEqual(const A, B: TValue): Boolean;
 function BOOL_VAL(const V: boolean): TValue;
 function NUMBER_VAL(const V: double): TValue;
 function OBJ_VAL(const V: Pointer): TValue;
+function ERROR_MSG_VAL(const msg: string): TValue;
+function ERROR_MSG_VAL(const fmt: string; args: array of const): TValue;
+function ERROR_MSG_GET(var V: TValue): string;
 const
   NIL_VAL: TValue = (type_: VAL_NIL; as_number: 0.0;);
   TRUE_VAL: TValue = (type_: VAL_BOOL; as_bool: true;);
   FALSE_VAL: TValue = (type_: VAL_BOOL; as_bool: false;);
-
-function IS_BOOL(const V: TValue): Boolean; inline;
-function IS_NUMBER(const V: TValue): Boolean; inline;
-function IS_NIL(const V: TValue): Boolean; inline;
-function IS_OBJ(const V: TValue): Boolean; inline;
 
 implementation
 
@@ -93,7 +97,7 @@ end;
 
 function isFalsey(const V: TValue): Boolean;
 begin
-  Result := IS_NIL(V) or (IS_BOOL(V) and (not V.as_bool))
+  Result := (V.IS_NIL_VAL) or ((V.IS_BOOL_VAL) and (not V.as_bool))
 end;
 
 function valuesEqual(const A, B: TValue): Boolean;
@@ -128,24 +132,32 @@ begin
   Result.as_obj := V;
 end;
 
-function IS_BOOL(const V: TValue): Boolean; inline;
+function ERROR_MSG_VAL(const msg: string): TValue;
+var
+  pmsg: PErrorMsg;
 begin
-  Result := V.type_ = VAL_BOOL;
+  Result.type_ := VAL_ERROR_MSG;
+  New(pmsg);
+  pmsg^.message := msg;
+  Result.as_obj := PLoxObj(pmsg);
 end;
 
-function IS_NUMBER(const V: TValue): Boolean; inline;
+function ERROR_MSG_VAL(const fmt: string; args: array of const): TValue;
 begin
-  Result := V.type_ = VAL_NUMBER;
+  Result := ERROR_MSG_VAL(format(fmt, args));
 end;
 
-function IS_NIL(const V: TValue): Boolean; inline;
+function ERROR_MSG_GET(var V: TValue): string;
+var
+  pmsg: PErrorMsg;
 begin
-  Result := V.type_ = VAL_NIL;
-end;
-
-function IS_OBJ(const V: TValue): Boolean; inline;
-begin
-  Result := V.type_ = VAL_OBJ;
+  if not (V.IS_ERROR_VAL) then
+    Exit('<value is not an error message>');
+  pmsg := PErrorMsg(V.as_obj);
+  Result := pmsg^.message;
+  pmsg^.message := '';
+  Dispose(pmsg);
+  V := NIL_VAL;
 end;
 
 { TValueArray }
