@@ -17,6 +17,7 @@ type
     OP_JUMP_IF_FALSE_POP,
     OP_LOOP,
     OP_CALL,
+    OP_INHERIT,
     OP_CLOSE_UPVALUE,
     OP_RETURN,
     OP_NIL,
@@ -48,6 +49,7 @@ type
       OP_CLASS,
       OP_METHOD,
       OP_INVOKE,
+      OP_GET_SUPER,
       OP_SET_PORPERTY,
       OP_GET_PORPERTY,
 

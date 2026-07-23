@@ -79,6 +79,7 @@ type
   PClassCompiler = ^TClassCompiler;
   TClassCompiler = record
     enclosing: PClassCompiler;
+    hasSuperclass: Boolean;
   end;
 
   { TCompiler }
@@ -160,6 +161,7 @@ type
     procedure string_(const canAssign: Boolean);
     procedure variable(const canAssign: Boolean);
     procedure this_(const canAssign: Boolean);
+    procedure super_(const canAssign: Boolean);
     procedure unary(const canAssign: Boolean);
     procedure binary(const canAssign: Boolean);
     procedure grouping(const canAssign: Boolean);
@@ -180,6 +182,12 @@ begin
   finally
     Free;
   end;
+end;
+
+function syntheticToken(const text: string): TToken;
+begin
+  Result.start := PChar(text);
+  Result.length := length(text);
 end;
 
 { TCompiler }
@@ -231,7 +239,7 @@ begin
   init_rule(TOKEN_OR           , nil      , @or_   , PREC_OR);
   init_rule(TOKEN_PRINT        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_RETURN       , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_SUPER        , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_SUPER        , @super_  , nil    , PREC_NONE);
   init_rule(TOKEN_THIS         , @this_   , nil    , PREC_NONE);
   init_rule(TOKEN_TRUE         , @literal , nil    , PREC_NONE);
   init_rule(TOKEN_VAR          , nil      , nil    , PREC_NONE);
@@ -941,7 +949,25 @@ begin
   defineVariable(nameConstant);
 
   classCompiler.enclosing := currentClass;
+  classCompiler.hasSuperclass := false;
   currentClass := @classCompiler;
+
+  if match(TOKEN_LESS) then
+  begin
+    consume(TOKEN_IDENTIFIER, 'Expect superclass name.');
+    variable(false);
+
+    if identifiersEqual(klassName, parser.previous) then
+      error('A class can''t inherit from itself.');
+
+    beginScope();
+    addLocal(syntheticToken('super'));
+    defineVariable(0);
+
+    namedVariable(klassName, false);
+    emitCode(OP_INHERIT);
+    classCompiler.hasSuperclass := true;
+  end;
 
   namedVariable(klassName, false);
   consume(TOKEN_LEFT_BRACE, 'Expect "{" before class body.');
@@ -949,6 +975,9 @@ begin
     method();
   consume(TOKEN_RIGHT_BRACE, 'Expect "}" after class body.');
   emitCode(OP_POP);
+
+  if classCompiler.hasSuperclass then
+    endScope();
 
   currentClass := currentClass^.enclosing;
 end;
@@ -1051,6 +1080,24 @@ begin
     Exit;
   end;
   variable(false);
+end;
+
+procedure TCompiler.super_(const canAssign: Boolean);
+var
+  name: Integer;
+begin
+  if currentClass = nil then
+    error('Can''t use "super" outside of a class.')
+  else if not currentClass^.hasSuperclass then
+    error('Can''t use "super" in a class with no superclass.');
+
+  consume(TOKEN_DOT, 'Expect "." after "super".');
+  consume(TOKEN_IDENTIFIER, 'Expect superclass method name.');
+  name := identifierConstant(parser.previous);
+
+  namedVariable(syntheticToken('this'), false);
+  namedVariable(syntheticToken('super'), false);
+  emitIndex(name, OP_GET_SUPER);
 end;
 
 procedure TCompiler.unary(const canAssign: Boolean);

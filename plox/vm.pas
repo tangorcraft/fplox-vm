@@ -128,6 +128,7 @@ type
     6: (D: double);
     7: (pval: PValue);
     8: (instance: PObjInstance);
+    9: (klass: PObjClass);
   end;
 
 procedure TLoxVM.markRoots();
@@ -598,6 +599,17 @@ begin
         frame := @frames[frameCount - 1];
         local_ip := frame^.ip;
       end;
+      OP_INHERIT: begin
+        // valA := PEEK_v1; // superclass
+        if not IS_CLASS(PEEK_v1) then
+        begin
+          runtimeError('Superclass must be a class.', [], local_ip);
+          Exit(INTERPRET_RUNTIME_ERROR);
+        end;
+        temp.klass := AS_CLASS(PEEK_v0); // subclass
+        AS_CLASS(PEEK_v1)^.methods.tableAddAll(temp.klass^.methods);
+        POP_1; // subclass
+      end;
       OP_CLOSE_UPVALUE: begin
         closeUpvalues(stackTop - 1);
         POP_1;
@@ -755,6 +767,14 @@ index_read:
           Exit(INTERPRET_RUNTIME_ERROR);
         frame := @frames[frameCount - 1];
         local_ip := frame^.ip;
+      end;
+      OP_GET_SUPER: begin
+        //name := READ_STRING;
+        temp.klass := AS_CLASS(pop()); // superclass
+
+        frame^.ip := local_ip; // this is needed for possible runtimeError call from bindMethod
+        if not bindMethod(temp.klass, READ_STRING) then
+          Exit(INTERPRET_RUNTIME_ERROR);
       end;
       OP_SET_PORPERTY: begin
         if not IS_INSTANCE(PEEK_v1) then
