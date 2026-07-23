@@ -175,6 +175,7 @@ begin
       instruction := OpCode(C.code[Result]);
       case instruction of
         OP_CLASS,
+        OP_METHOD,
         OP_CONSTANT,
         OP_SET_GLOBAL,
         OP_GET_GLOBAL,

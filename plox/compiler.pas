@@ -53,6 +53,8 @@ type
 
   TFunctionType = (
     TYPE_FUNCTION,
+    TYPE_INITIALIZER,
+    TYPE_METHOD,
     TYPE_SCRIPT
   );
 
@@ -74,6 +76,11 @@ type
     scopeDepth: Integer;
   end;
 
+  PClassCompiler = ^TClassCompiler;
+  TClassCompiler = record
+    enclosing: PClassCompiler;
+  end;
+
   { TCompiler }
 
   TCompiler = class
@@ -81,6 +88,7 @@ type
     parser: TParser;
     parseRules: array[TokenType] of TParseRule;
     current: PCompilerState;
+    currentClass: PClassCompiler;
     MM: TObjectManager_Fun;
 
     constructor Create(const mgr: TObjectManager_Fun);
@@ -140,6 +148,7 @@ type
     procedure forStatement();
     procedure statement();
     procedure function_(const type_: TFunctionType);
+    procedure method();
     procedure classDeclaration();
     procedure funDeclaration();
     procedure varDeclaration();
@@ -150,6 +159,7 @@ type
     procedure literal(const canAssign: Boolean);
     procedure string_(const canAssign: Boolean);
     procedure variable(const canAssign: Boolean);
+    procedure this_(const canAssign: Boolean);
     procedure unary(const canAssign: Boolean);
     procedure binary(const canAssign: Boolean);
     procedure grouping(const canAssign: Boolean);
@@ -186,6 +196,7 @@ constructor TCompiler.Create(const mgr: TObjectManager_Fun);
 begin
   MM := mgr;
   current := nil;
+  currentClass := nil;
   MM.registerMarker(@markCompilerRoots);
   init_rule(TOKEN_LEFT_PAREN   , @grouping, @call  , PREC_CALL);
   init_rule(TOKEN_RIGHT_PAREN  , nil      , nil    , PREC_NONE);
@@ -221,7 +232,7 @@ begin
   init_rule(TOKEN_PRINT        , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_RETURN       , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_SUPER        , nil      , nil    , PREC_NONE);
-  init_rule(TOKEN_THIS         , nil      , nil    , PREC_NONE);
+  init_rule(TOKEN_THIS         , @this_   , nil    , PREC_NONE);
   init_rule(TOKEN_TRUE         , @literal , nil    , PREC_NONE);
   init_rule(TOKEN_VAR          , nil      , nil    , PREC_NONE);
   init_rule(TOKEN_WHILE        , nil      , nil    , PREC_NONE);
@@ -364,7 +375,10 @@ end;
 
 procedure TCompiler.emitReturn();
 begin
-  emitCode(OP_NIL);
+  if current^.funType = TYPE_INITIALIZER then
+    emitCodeByte(OP_GET_LOCAL, 0)
+  else
+    emitCode(OP_NIL);
   emitCode(OP_RETURN);
 end;
 
@@ -430,8 +444,16 @@ begin
   inc(current^.localCount);
   local^.depth := 0;
   local^.isCaptured := false;
-  local^.name.start := '';
-  local^.name.length := 0;
+  if type_ <> TYPE_FUNCTION then
+  begin
+    local^.name.start := 'this';
+    local^.name.length := 4;
+  end
+  else
+  begin
+    local^.name.start := '';
+    local^.name.length := 0;
+  end;
 end;
 
 function TCompiler.endCompiler: PObjFunction;
@@ -755,6 +777,8 @@ begin
   if match(TOKEN_SEMICOLON) then
     emitReturn()
   else begin
+    if current^.funType = TYPE_INITIALIZER then
+      error('Can''t return a value from an initializer.');
     expression();
     consume(TOKEN_SEMICOLON, 'Expect ";" after return value.');
     emitCode(OP_RETURN);
@@ -886,20 +910,47 @@ begin
   end;
 end;
 
+procedure TCompiler.method();
+var
+  constant: Integer;
+begin
+  consume(TOKEN_IDENTIFIER, 'Expect method name.');
+  constant := identifierConstant(parser.previous);
+
+  if (parser.previous.length = 4) and
+     memcmp(parser.previous.start, PChar('init'), 4)
+  then
+    function_(TYPE_INITIALIZER)
+  else
+    function_(TYPE_METHOD);
+  emitIndex(constant, OP_METHOD);
+end;
+
 procedure TCompiler.classDeclaration();
 var
   nameConstant: integer;
+  klassName: TToken;
+  classCompiler: TClassCompiler;
 begin
   consume(TOKEN_IDENTIFIER, 'Expect class name.');
+  klassName := parser.previous;
   nameConstant := identifierConstant(parser.previous);
   declareVariable();
 
   emitIndex(nameConstant, OP_CLASS);
   defineVariable(nameConstant);
 
-  consume(TOKEN_LEFT_BRACE, 'Expect "{" before class body.');
+  classCompiler.enclosing := currentClass;
+  currentClass := @classCompiler;
 
+  namedVariable(klassName, false);
+  consume(TOKEN_LEFT_BRACE, 'Expect "{" before class body.');
+  while not check(TOKEN_RIGHT_BRACE) and not check(TOKEN_EOF) do
+    method();
   consume(TOKEN_RIGHT_BRACE, 'Expect "}" after class body.');
+  emitCode(OP_POP);
+
+  currentClass := currentClass^.enclosing;
 end;
 
 procedure TCompiler.funDeclaration();
@@ -990,6 +1041,16 @@ end;
 procedure TCompiler.variable(const canAssign: Boolean);
 begin
   namedVariable(parser.previous, canAssign);
+end;
+
+procedure TCompiler.this_(const canAssign: Boolean);
+begin
+  if currentClass = nil then
+  begin
+    error('Can''t use "this" outside of a class.');
+    Exit;
+  end;
+  variable(false);
 end;
 
 procedure TCompiler.unary(const canAssign: Boolean);

@@ -46,6 +46,7 @@ type
       OP_GET_GLOBAL,
       OP_DEFINE_GLOBAL,
       OP_CLASS,
+      OP_METHOD,
       OP_SET_PORPERTY,
       OP_GET_PORPERTY,
 
@@ -117,6 +118,7 @@ type
   TObjClass = record
     obj: TLoxObj;
     name: PObjString;
+    methods: THashTable;
   end;
   PObjClass = ^TObjClass;
 
@@ -127,12 +129,20 @@ type
   end;
   PObjInstance = ^TObjInstance;
 
+  TObjBoundMethod = record
+    obj: TLoxObj;
+    receiver: TValue;
+    method: PObjClosure;
+  end;
+  PObjBoundMethod = ^TObjBoundMethod;
+
   { TObjectManager_Fun }
 
   TObjectManager_Fun = class(TObjectManager_SI)
   public
     function newClass(const name: PObjString): PObjClass;
     function newInstance_(const klass: PObjClass): PObjInstance;
+    function newBoundMethod(const receiver: TValue; const method: PObjClosure): PObjBoundMethod;
 
     function newFunction(): PObjFunction;
     function newClosure(const func: TObjFunction): PObjClosure;
@@ -149,6 +159,7 @@ type
   4:(as_upvalue: PObjUpvalue);
   5:(as_class: PObjClass);
   6:(as_instance: PObjInstance);
+  7:(as_bound_m: PObjBoundMethod);
   end;
 
 function IS_FUNCTION(const V: TValue): Boolean; inline;
@@ -156,11 +167,14 @@ function IS_CLOSURE(const V: TValue): Boolean; inline;
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
 function IS_CLASS(const V: TValue): Boolean; inline;
 function IS_INSTANCE(const V: TValue): Boolean; inline;
+function IS_BOUND_METHOD(const V: TValue): Boolean; inline;
 
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 function AS_CLOSURE(const V: TValue): PObjClosure; inline;
 function AS_CLASS(const V: TValue): PObjClass; inline;
 function AS_INSTANCE(const V: TValue): PObjInstance; inline;
+function AS_BOUND_METHOD(const V: TValue): PObjBoundMethod; inline;
+
 procedure printFunction(const V: PObjFunction; const err: Boolean = false);
 
 implementation
@@ -190,6 +204,11 @@ begin
   Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_INSTANCE);
 end;
 
+function IS_BOUND_METHOD(const V: TValue): Boolean;
+begin
+  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_BOUND_METHOD);
+end;
+
 function AS_FUNCTION(const V: TValue): PObjFunction; inline;
 begin
   Result := PObjFunction(V.as_obj);
@@ -208,6 +227,11 @@ end;
 function AS_INSTANCE(const V: TValue): PObjInstance;
 begin
   Result := PObjInstance(V.as_obj);
+end;
+
+function AS_BOUND_METHOD(const V: TValue): PObjBoundMethod;
+begin
+  Result := PObjBoundMethod(V.as_obj);
 end;
 
 procedure printFunction(const V: PObjFunction; const err: Boolean);
@@ -303,6 +327,7 @@ function TObjectManager_Fun.newClass(const name: PObjString): PObjClass;
 begin
   Result := allocateObject(sizeof(TObjClass), OBJ_CLASS);
   Result^.name := name;
+  Result^.methods := THashTable.Create(Self);
 end;
 
 function TObjectManager_Fun.newInstance_(const klass: PObjClass): PObjInstance;
@@ -310,6 +335,14 @@ begin
   Result := allocateObject(sizeof(TObjInstance), OBJ_INSTANCE);
   Result^.klass := klass;
   Result^.fields := THashTable.Create(Self);
+end;
+
+function TObjectManager_Fun.newBoundMethod(const receiver: TValue;
+  const method: PObjClosure): PObjBoundMethod;
+begin
+  Result := allocateObject(sizeof(TObjBoundMethod), OBJ_BOUND_METHOD);
+  Result^.receiver := receiver;
+  Result^.method := method;
 end;
 
 function TObjectManager_Fun.newFunction(): PObjFunction;

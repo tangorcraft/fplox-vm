@@ -36,6 +36,7 @@ type
     stack: array[0..STACK_MAX] of TValue;
     stackTop: PValue;
     MM: TObjectManager_Fun;
+    initString: PObjString;
     globals: THashTable;
     frames: array[0..FRAMES_MAX] of TCallFrame;
     frameCount: Integer;
@@ -56,6 +57,8 @@ type
     function callValue(const callee: TValue; const argCount: Integer): Boolean;
     function captureUpvalue(const local: PValue): PObjUpvalue;
     procedure closeUpvalues(const last: PValue);
+    procedure defineMethod(const name: PObjString);
+    function bindMethod(const klass: PObjClass; const name: PObjString): Boolean;
     procedure runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte = nil);
   public
     constructor Create;
@@ -129,6 +132,7 @@ var
   temp: TTempUnion;
   i: Integer;
 begin
+  MM.markObject(PLoxObj(initString));
   temp.pval := @stack[0];
   while temp.pval < stackTop do
   begin
@@ -161,6 +165,7 @@ begin
   inc(stackTop);
 end;
 
+{$define POP_1:=dec(stackTop)}
 function TLoxVM.pop: TValue;
 begin
   dec(stackTop);
@@ -232,12 +237,29 @@ begin
 end;
 
 function TLoxVM.callValue(const callee: TValue; const argCount: Integer): Boolean;
+var
+  tmp: ObjEx;
+  initializer: TValue;
 begin
   if (callee.IS_OBJ_VAL) then
     case OBJ_TYPE(callee) of
       OBJ_CLASS: begin
-        stackTop[-argCount - 1] := OBJ_VAL(MM.newInstance_(AS_CLASS(callee)));
+        tmp.as_class := AS_CLASS(callee);
+        stackTop[-argCount - 1] := OBJ_VAL(MM.newInstance_(tmp.as_class));
+        if tmp.as_class^.methods.tableGet(initString, initializer) then
+          Exit(call(AS_CLOSURE(initializer), argCount))
+        else if argCount <> 0 then
+        begin
+          runtimeError('Expected 0 arguments but got %d.', [argCount]);
+          Exit(false);
+        end;
         Exit(true);
+      end;
+      OBJ_BOUND_METHOD: begin
+        tmp.as_bound_m := AS_BOUND_METHOD(callee);
+        stackTop[-argCount - 1] := tmp.as_bound_m^.receiver;
+        Result := call(tmp.as_bound_m^.method, argCount);
+        Exit;
       end;
       OBJ_CLOSURE:
         Exit(call(AS_CLOSURE(callee), argCount));
@@ -285,6 +307,31 @@ begin
   end;
 end;
 
+procedure TLoxVM.defineMethod(const name: PObjString);
+begin
+  //method := peek(0);
+  //class := AS_CLASS(peek(1));
+  AS_CLASS(PEEK_v1)^.methods.tableSet(name, PEEK_v0);
+  POP_1;
+end;
+
+function TLoxVM.bindMethod(const klass: PObjClass; const name: PObjString): Boolean;
+var
+  method: TValue;
+  bound: PObjBoundMethod;
+begin
+  if not klass^.methods.tableGet(name, method) then
+  begin
+    runtimeError('Undefined property "%s".', [name^.chars]);
+    Exit(false);
+  end;
+
+  bound := MM.newBoundMethod(PEEK_v0, AS_CLOSURE(method));
+  POP_1;
+  push(OBJ_VAL(bound));
+  Result := true;
+end;
+
 procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte);
 var
   frame: PCallFrame;
@@ -321,6 +368,8 @@ begin
   openUpvalues := nil;
   MM.registerMarker(@markRoots);
 
+  initString := nil;
+  initString := MM.copyString('init', 4);
   defineNative('clock', 0, @clockNative);
   defineNative('hasField', 2, @hasFieldNative);
 end;
@@ -330,6 +379,7 @@ begin
   globals.Free;
   //MM.unregisterMarker(@markRoots);
   //we free the memory manager completely anyway
+  initString := nil;
   MM.Free;
   inherited Destroy;
 end;
@@ -376,7 +426,7 @@ begin
 
   push(OBJ_VAL(func));
   closure := MM.newClosure(func^);
-  pop();
+  POP_1;
   push(OBJ_VAL(closure));
   call(closure, 0);
 
@@ -510,7 +560,7 @@ begin
       end;
       OP_CLOSE_UPVALUE: begin
         closeUpvalues(stackTop - 1);
-        pop();
+        POP_1;
       end;
       OP_RETURN: begin
         valA := pop(); // result
@@ -518,7 +568,7 @@ begin
         dec(frameCount);
         if frameCount = 0 then
         begin
-          pop();
+          POP_1;
           Exit(INTERPRET_OK);
         end;
 
@@ -530,7 +580,7 @@ begin
       OP_NIL: push(NIL_VAL);
       OP_TRUE: push(BOOL_VAL(true));
       OP_FALSE: push(BOOL_VAL(false));
-      OP_POP: pop();
+      OP_POP: POP_1;
       OP_SET_LOCAL: begin
         temp.B := READ_BYTE; // slot
         frame^.slots[temp.B] := PEEK_v0;
@@ -649,10 +699,13 @@ index_read:
       OP_DEFINE_GLOBAL: begin
         temp.name := READ_STRING;
         globals.tableSet(temp.name, PEEK_v0);
-        pop();
+        POP_1;
       end;
       OP_CLASS: begin
         push(OBJ_VAL(MM.newClass(READ_STRING)));
+      end;
+      OP_METHOD: begin
+        defineMethod(READ_STRING);
       end;
       OP_SET_PORPERTY: begin
         if not IS_INSTANCE(PEEK_v1) then
@@ -675,18 +728,18 @@ index_read:
         temp.instance := AS_INSTANCE(PEEK_v0);
         //temp.name := READ_STRING;
 
+        frame^.ip := local_ip; // this is needed for possible runtimeError call from bindMethod
         if temp.instance^.fields.tableGet(READ_STRING, valA) then
         begin
-          pop(); // instance
+          POP_1; // instance
           push(valA);
         end
-        else
-        begin
           // since READ_STRING uses idx variable that don't change it can be reused
-          runtimeError('Undefined property "%s".', [READ_STRING^.chars], local_ip);
+        else if not bindMethod(temp.instance^.klass, READ_STRING) then
+        begin
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
-      end;
+      end; // OP_GET_PORPERTY
 
     end;
 // end index_read

@@ -22,6 +22,7 @@ type
   ObjType = (
     OBJ_CLASS,
     OBJ_INSTANCE,
+    OBJ_BOUND_METHOD,
     OBJ_NATIVE_FN,
     OBJ_CLOSURE,
     OBJ_FUNCTION,

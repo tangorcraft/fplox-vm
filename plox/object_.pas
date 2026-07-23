@@ -100,6 +100,7 @@ begin
   case OBJ_TYPE(V) of
     OBJ_CLASS: printf('<class %s>', [AS_CLASS(V)^.name^.chars], err);
     OBJ_INSTANCE: printf('<instance of %s>', [AS_INSTANCE(V)^.klass^.name^.chars], err);
+    OBJ_BOUND_METHOD: printFunction(PObjFunction(AS_BOUND_METHOD(V)^.method), err);
     OBJ_NATIVE_FN,
     OBJ_CLOSURE,
     OBJ_FUNCTION: printFunction(AS_FUNCTION(V), err);
@@ -167,10 +168,15 @@ begin
   case obj^.type_ of
     OBJ_CLASS: begin
       markObject(PLoxObj(tmp.as_class^.name));
+      tmp.as_class^.methods.markTable();
     end;
     OBJ_INSTANCE: begin
       markObject(PLoxObj(tmp.as_instance^.klass));
       tmp.as_instance^.fields.markTable();
+    end;
+    OBJ_BOUND_METHOD: begin
+      markValue(tmp.as_bound_m^.receiver);
+      markObject(PLoxObj(tmp.as_bound_m^.method));
     end;
     OBJ_NATIVE_FN: begin
       markObject(PLoxObj(tmp.as_func^.fn.name));
@@ -242,6 +248,9 @@ begin
   {$endif}
 
   case O^.type_ of
+    OBJ_CLASS: begin
+      PObjClass(O)^.methods.Free;
+    end;
     OBJ_INSTANCE: begin
       PObjInstance(O)^.fields.Free;
     end;

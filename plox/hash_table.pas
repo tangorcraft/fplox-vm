@@ -39,7 +39,7 @@ type
     constructor Create(const objMgr: TObjectManager_SI);
     destructor Destroy; override;
 
-    function tableGet(const key: PObjString; var V: TValue): Boolean;
+    function tableGet(const key: PObjString; out V: TValue): Boolean;
     function tableFind(const key: PObjString): Boolean;
     function tableSet(const key: PObjString; const V: TValue;
       const mustExist: Boolean = false): Boolean;
@@ -262,7 +262,7 @@ begin
   inherited Destroy;
 end;
 
-function THashTable.tableGet(const key: PObjString; var V: TValue): Boolean;
+function THashTable.tableGet(const key: PObjString; out V: TValue): Boolean;
 var
   entry: PTableEntry;
 begin
