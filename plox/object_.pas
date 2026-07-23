@@ -104,8 +104,8 @@ begin
     OBJ_NATIVE_FN,
     OBJ_CLOSURE,
     OBJ_FUNCTION: printFunction(AS_FUNCTION(V), err);
-    OBJ_UPVALUE: print('upvalue', err);
-    OBJ_STRING: printf('"%s"',[AS_CSTRING(V)], err);
+    OBJ_UPVALUE: print('<upvalue>', err);
+    OBJ_STRING: printf('%s',[AS_CSTRING(V)], err);
   end;
 end;
 

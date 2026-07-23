@@ -59,6 +59,9 @@ type
     procedure closeUpvalues(const last: PValue);
     procedure defineMethod(const name: PObjString);
     function bindMethod(const klass: PObjClass; const name: PObjString): Boolean;
+    function invoke(const name: PObjString; const argCount: integer): Boolean;
+    function invokeFromClass(const klass: PObjClass; const name: PObjString;
+      const argCount: integer): Boolean;
     procedure runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte = nil);
   public
     constructor Create;
@@ -330,6 +333,43 @@ begin
   POP_1;
   push(OBJ_VAL(bound));
   Result := true;
+end;
+
+function TLoxVM.invoke(const name: PObjString; const argCount: integer): Boolean;
+var
+  val: TValue;
+  instance: PObjInstance;
+begin
+  val := peek(argCount)^; // receiver
+
+  if not IS_INSTANCE(val) then
+  begin
+    runtimeError('Only instances have methods.', []);
+    Exit(False);
+  end;
+
+  instance := AS_INSTANCE(val);
+
+  if instance^.fields.tableGet(name, val) then
+  begin
+    stackTop[-argCount - 1] := val;
+    Result := callValue(val, argCount);
+  end
+  else
+    Result := invokeFromClass(instance^.klass, name, argCount);
+end;
+
+function TLoxVM.invokeFromClass(const klass: PObjClass; const name: PObjString;
+  const argCount: integer): Boolean;
+var
+  method: TValue;
+begin
+  if not klass^.methods.tableGet(name, method) then
+  begin
+    runtimeError('Undefined property "%s".', [name^.chars]);
+    Exit(false);
+  end;
+  Result := call(AS_CLOSURE(method), argCount);
 end;
 
 procedure TLoxVM.runtimeError(const Fmt: string; vars: array of const; const local_ip: PByte);
@@ -706,6 +746,15 @@ index_read:
       end;
       OP_METHOD: begin
         defineMethod(READ_STRING);
+      end;
+      OP_INVOKE: begin
+        //method := READ_STRING;
+        temp.B := READ_BYTE(); // argCount
+        frame^.ip := local_ip;
+        if not invoke(READ_STRING, temp.B) then
+          Exit(INTERPRET_RUNTIME_ERROR);
+        frame := @frames[frameCount - 1];
+        local_ip := frame^.ip;
       end;
       OP_SET_PORPERTY: begin
         if not IS_INSTANCE(PEEK_v1) then

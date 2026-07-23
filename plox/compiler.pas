@@ -1105,6 +1105,7 @@ end;
 procedure TCompiler.dot(const canAssign: Boolean);
 var
   name: Integer;
+  argCount: Byte;
 begin
   consume(TOKEN_IDENTIFIER, 'Expect property name after ".".');
   name := identifierConstant(parser.previous);
@@ -1113,6 +1114,12 @@ begin
   begin
     expression();
     emitIndex(name, OP_SET_PORPERTY);
+  end
+  else if match(TOKEN_LEFT_PAREN) then
+  begin
+    argCount := argumentList();
+    emitIndex(name, OP_INVOKE);
+    emitByte(argCount);
   end
   else
   begin

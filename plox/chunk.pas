@@ -47,6 +47,7 @@ type
       OP_DEFINE_GLOBAL,
       OP_CLASS,
       OP_METHOD,
+      OP_INVOKE,
       OP_SET_PORPERTY,
       OP_GET_PORPERTY,
 

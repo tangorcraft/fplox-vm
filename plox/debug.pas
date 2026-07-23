@@ -48,9 +48,9 @@ end;
 
 procedure print_constant(const name: string; const constant: integer; const V: TValue);
 begin
-  printf('%-16s %4d ', [name, constant]);
+  printf('%-16s %4d "', [name, constant]);
   printValue(V);
-  print(NL);
+  print('"'+NL);
 end;
 
 function closureInstruction(const op: OpCode; const C: TChunk; const constant: integer; const offset: integer): Integer;
@@ -101,6 +101,19 @@ begin
   Str(op, name);
   print_constant(name, constant, C.constants.values[constant]);
   Result := offset + 1;
+end;
+
+function invokeIntsruction(const op: OpCode; const C: TChunk; const constant: integer; const offset: integer): integer; overload;
+var
+  name: String;
+  argCount: Byte;
+begin
+  Str(op, name);
+  argCount := C.code[offset + 1];
+  printf('%-16s (%d args) %4d "', [name, argCount, constant]);
+  printValue(C.constants.values[constant]);
+  print('"'+NL);
+  Result := offset + 2;
 end;
 
 procedure disassembleChunk(const C: TChunk; const name: string);
@@ -185,6 +198,8 @@ begin
           Result := constantIntsruction(instruction, C, indexConstant, Result);
         OP_CLOSURE:
           Result := closureInstruction(instruction, C, indexConstant, Result);
+        OP_INVOKE:
+          Result := invokeIntsruction(instruction, C, indexConstant, Result);
 
       else
         begin
