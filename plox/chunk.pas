@@ -266,7 +266,8 @@ begin
   Result := constants.find(V);
   if Result <> -1 then
     Exit;
-  MM.temporary := V.as_obj;
+  if (V.IS_OBJ_VAL) then
+    MM.temporary := V.as_obj;
   constants.write(V);
   Result := constants.count - 1;
   MM.temporary := nil;
