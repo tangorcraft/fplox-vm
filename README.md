@@ -42,6 +42,8 @@ Currently completed chapters:
   * Added a way for native functions to trigger runtime error;
 * Methods and initializers;
 * Superclasses;
+* Optimization;
+  * Only implemented NaN boxing for now;
 
 # License
 
