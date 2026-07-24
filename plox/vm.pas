@@ -229,7 +229,7 @@ begin
 
   retVal := NIL_VAL;
   func^.fn.nativeFn(stackTop - argCount, argCount, retVal);
-  if (retVal.IS_ERROR_VAL) then
+  if (retVal IS_OBJ_VAL) and (AS_OBJ(retVal)^.type_ = OBJ_ERROR_MESSAGE) then
   begin
     errorMsg := ERROR_MSG_GET(retVal);
     runtimeError('Native function "%s" error: %s', [func^.fn.name^.chars, errorMsg]);
@@ -245,7 +245,7 @@ var
   tmp: ObjEx;
   initializer: TValue;
 begin
-  if (callee.IS_OBJ_VAL) then
+  if (callee IS_OBJ_VAL) then
     case OBJ_TYPE(callee) of
       OBJ_CLASS: begin
         tmp.as_class := AS_CLASS(callee);
@@ -435,10 +435,6 @@ begin
     globals.tableSet(fn.name, OBJ_VAL(MM.temporary));
   end;
   MM.temporary := nil;
-  {$ifdef DEBUG_HASH_TABLE}
-  print('--- globals ---'+NL, true);
-  globals.printTable(True);
-  {$endif}
 end;
 
 procedure TLoxVM.pause(const callback: TProcedureMethod);
@@ -506,7 +502,7 @@ var
   end;
 
   {$define INDEXED_CONSTANT:=frame^.closure^.func.chunk.constants.values[idx]}
-  {$define READ_STRING:=PObjString(INDEXED_CONSTANT.as_obj)}
+  {$define READ_STRING:=AS_STRING(INDEXED_CONSTANT)}
 
   procedure concatenate();
   var
@@ -653,12 +649,12 @@ begin
         push(BOOL_VAL(isFalsey(pop())));
       OP_NEGATE: begin
         temp.pval := PEEK_p0;
-        if not (temp.pval^.IS_NUMBER_VAL) then
+        if not (temp.pval^ IS_NUMBER_VAL) then
         begin
           runtimeError('Operand must be a number.',[], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
-        temp.pval^.as_number := -(temp.pval^.as_number);
+        temp.pval^ := NUMBER_VAL(-AS_NUMBER(temp.pval^));
       end;
       OP_EQUAL: begin
         valB := pop();
@@ -676,11 +672,11 @@ begin
       OP_ADD: begin
         if IS_STRING(PEEK_v0) and IS_STRING(PEEK_v1) then
           concatenate()
-        else if (PEEK_v0.IS_NUMBER_VAL) and (PEEK_v1.IS_NUMBER_VAL) then
+        else if (PEEK_v0 IS_NUMBER_VAL) and (PEEK_v1 IS_NUMBER_VAL) then
         begin
           valB := pop();
           valA := pop();
-          push(NUMBER_VAL(valA.as_number + valB.as_number));
+          push(NUMBER_VAL(AS_NUMBER(valA) + AS_NUMBER(valB)));
         end
         else begin
           runtimeError('Operands must be two numbers or two strings.',[], local_ip);

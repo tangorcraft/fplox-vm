@@ -85,6 +85,9 @@ type
 procedure NewTableValues(const MM: TMemoryManager; const new_capacity: Integer; out Values: TTableValues);
 var
   probe_grow: Integer;
+  {$ifdef NAN_BOXING}
+  i: integer;
+  {$endif}
 begin
   Values.Capacity := new_capacity or 1; // let new capacity be odd
   Values.ProbeStep := 1; // linear probe at low capacity
@@ -99,6 +102,10 @@ begin
 
   // zeroing memory will set value type to VAL_NIL, which is defined as = 0
   Values.Entries := MM.ALLOC_AND_ZERO_ARRAY(Values.Capacity, entrySize);
+  {$ifdef NAN_BOXING}
+  for i := 0 to Values.Capacity - 1 do
+    Values.Entries[i].value := NIL_VAL;
+  {$endif}
 
   Values.GrowThreshold := Trunc(Values.Capacity * HT_MAX_LOAD);
   Values.TombstoneThreshold := Trunc(Values.Capacity * HT_TOMBSTONE_LOAD);
@@ -144,7 +151,7 @@ begin
     iter := FEntries + i;
     if iter^.key = nil then // empty or tombstone
     begin
-      if not (iter^.value.IS_NIL_VAL) then // tombstone
+      if not (iter^.value IS_NIL_VAL) then // tombstone
       begin
         iter^.value := NIL_VAL; // make it empty
         Dec(FCount);
@@ -158,7 +165,7 @@ begin
         dest := FEntries + idx;
         if dest^.key = nil then // desired position is empty
         begin
-          if not (dest^.value.IS_NIL_VAL) then // tombstone
+          if not (dest^.value IS_NIL_VAL) then // tombstone
           begin
             Dec(FCount);
             Dec(FTombstoneCount);
@@ -226,7 +233,7 @@ begin
       Exit
     else if Result^.key = nil then
     begin
-      if (Result^.value.IS_NIL_VAL) then
+      if (Result^.value IS_NIL_VAL) then
       begin
         // empty entry return tombstone if it's not nil
         if tombstone <> nil then
@@ -304,7 +311,7 @@ begin
     // maybe I should change the meaning of this function return value
     if mustExist then
       Exit;
-    if (entry^.value.IS_NIL_VAL) then
+    if (entry^.value IS_NIL_VAL) then
       inc(FCount) // new entry is not a tombstone
     else
       dec(FTombstoneCount);
@@ -326,7 +333,11 @@ begin
 
   // tombstone, an entry with key = nil, but value type not = VAL_NIL
   entry^.key := nil;
+  {$ifdef NAN_BOXING}
+  entry^.value := QNAN;
+  {$else}
   entry^.value.type_ := VAL_Invalid;
+  {$endif}
   inc(FTombstoneCount);
   Result := True;
   if FTombstoneCount > FTombstoneThreshold then
