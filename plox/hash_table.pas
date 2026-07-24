@@ -85,6 +85,9 @@ type
 procedure NewTableValues(const MM: TMemoryManager; const new_capacity: Integer; out Values: TTableValues);
 var
   probe_grow: Integer;
+  {$ifdef NAN_BOXING}
+  i: integer;
+  {$endif}
 begin
   Values.Capacity := new_capacity or 1; // let new capacity be odd
   Values.ProbeStep := 1; // linear probe at low capacity
@@ -99,6 +102,10 @@ begin
 
   // zeroing memory will set value type to VAL_NIL, which is defined as = 0
   Values.Entries := MM.ALLOC_AND_ZERO_ARRAY(Values.Capacity, entrySize);
+  {$ifdef NAN_BOXING}
+  for i := 0 to Values.Capacity - 1 do
+    Values.Entries[i].value.data := NIL_VAL_INT;
+  {$endif}
 
   Values.GrowThreshold := Trunc(Values.Capacity * HT_MAX_LOAD);
   Values.TombstoneThreshold := Trunc(Values.Capacity * HT_TOMBSTONE_LOAD);
@@ -326,7 +333,11 @@ begin
 
   // tombstone, an entry with key = nil, but value type not = VAL_NIL
   entry^.key := nil;
+  {$ifdef NAN_BOXING}
+  entry^.value.data := QNAN;
+  {$else}
   entry^.value.type_ := VAL_Invalid;
+  {$endif}
   inc(FTombstoneCount);
   Result := True;
   if FTombstoneCount > FTombstoneThreshold then

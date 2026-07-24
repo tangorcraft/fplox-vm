@@ -229,7 +229,7 @@ begin
 
   retVal := NIL_VAL;
   func^.fn.nativeFn(stackTop - argCount, argCount, retVal);
-  if (retVal.IS_ERROR_VAL) then
+  if (retVal.IS_OBJ_VAL) and (AS_OBJ(retVal)^.type_ = OBJ_ERROR_MESSAGE) then
   begin
     errorMsg := ERROR_MSG_GET(retVal);
     runtimeError('Native function "%s" error: %s', [func^.fn.name^.chars, errorMsg]);
@@ -435,10 +435,6 @@ begin
     globals.tableSet(fn.name, OBJ_VAL(MM.temporary));
   end;
   MM.temporary := nil;
-  {$ifdef DEBUG_HASH_TABLE}
-  print('--- globals ---'+NL, true);
-  globals.printTable(True);
-  {$endif}
 end;
 
 procedure TLoxVM.pause(const callback: TProcedureMethod);
@@ -506,7 +502,7 @@ var
   end;
 
   {$define INDEXED_CONSTANT:=frame^.closure^.func.chunk.constants.values[idx]}
-  {$define READ_STRING:=PObjString(INDEXED_CONSTANT.as_obj)}
+  {$define READ_STRING:=AS_STRING(INDEXED_CONSTANT)}
 
   procedure concatenate();
   var
@@ -658,7 +654,7 @@ begin
           runtimeError('Operand must be a number.',[], local_ip);
           Exit(INTERPRET_RUNTIME_ERROR);
         end;
-        temp.pval^.as_number := -(temp.pval^.as_number);
+        temp.pval^ := NUMBER_VAL(-AS_NUMBER(temp.pval^));
       end;
       OP_EQUAL: begin
         valB := pop();
@@ -680,7 +676,7 @@ begin
         begin
           valB := pop();
           valA := pop();
-          push(NUMBER_VAL(valA.as_number + valB.as_number));
+          push(NUMBER_VAL(AS_NUMBER(valA) + AS_NUMBER(valB)));
         end
         else begin
           runtimeError('Operands must be two numbers or two strings.',[], local_ip);

@@ -61,8 +61,11 @@ type
 
 function OBJ_TYPE(const V: TValue): ObjType; inline;
 function IS_STRING(const V: TValue): Boolean; inline;
-function AS_STRING(const V: TValue): PObjString; inline;
-function AS_CSTRING(const V: TValue): PChar; inline;
+type
+  AS_STRING = PObjString;
+  AS_CSTRING = PChar;
+operator Explicit(V: TValue): AS_STRING;
+operator Explicit(V: TValue): AS_CSTRING;
 
 procedure printObject(const V: TValue; const err: Boolean = false);
 function stringEqual(const A, B: TValue): Boolean;
@@ -77,22 +80,22 @@ const
 
 function OBJ_TYPE(const V: TValue): ObjType; inline;
 begin
-  Result := V.as_obj^.type_;
+  Result := AS_OBJ(V)^.type_;
 end;
 
 function IS_STRING(const V: TValue): Boolean; inline;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_STRING);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_STRING);
 end;
 
-function AS_STRING(const V: TValue): PObjString; inline;
+operator Explicit(V: TValue): AS_STRING;
 begin
-  Result := PObjString(V.as_obj);
+  Result := PObjString(AS_OBJ(V));
 end;
 
-function AS_CSTRING(const V: TValue): PChar; inline;
+operator Explicit(V: TValue): AS_CSTRING;
 begin
-  Result := PObjString(V.as_obj)^.chars;
+  Result := AS_STRING(V)^.chars;
 end;
 
 procedure printObject(const V: TValue; const err: Boolean);
@@ -384,8 +387,8 @@ end;
 
 procedure TObjectManager.markValue(const V: TValue);
 begin
-  if V.type_ = VAL_OBJ then
-    markObject(V.as_obj);
+  if V.IS_OBJ_VAL then
+    markObject(AS_OBJ(V));
 end;
 
 procedure TObjectManager.markObject(const O: PLoxObj);

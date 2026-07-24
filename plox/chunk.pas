@@ -173,69 +173,76 @@ function IS_CLASS(const V: TValue): Boolean; inline;
 function IS_INSTANCE(const V: TValue): Boolean; inline;
 function IS_BOUND_METHOD(const V: TValue): Boolean; inline;
 
-function AS_FUNCTION(const V: TValue): PObjFunction; inline;
-function AS_CLOSURE(const V: TValue): PObjClosure; inline;
-function AS_CLASS(const V: TValue): PObjClass; inline;
-function AS_INSTANCE(const V: TValue): PObjInstance; inline;
-function AS_BOUND_METHOD(const V: TValue): PObjBoundMethod; inline;
+type
+  AS_FUNCTION = PObjFunction;
+  AS_CLOSURE = PObjClosure;
+  AS_CLASS = PObjClass;
+  AS_INSTANCE = PObjInstance;
+  AS_BOUND_METHOD = PObjBoundMethod;
+
+operator Explicit(V: TValue) R: AS_FUNCTION; inline;
+operator Explicit(V: TValue): AS_CLOSURE; inline;
+operator Explicit(V: TValue): AS_CLASS; inline;
+operator Explicit(V: TValue): AS_INSTANCE; inline;
+operator Explicit(V: TValue): AS_BOUND_METHOD; inline;
 
 procedure printFunction(const V: PObjFunction; const err: Boolean = false);
 
 implementation
 
+operator Explicit(V: TValue) R: AS_FUNCTION;
+begin
+  R := PObjFunction(AS_OBJ(V));
+end;
+
+operator Explicit(V: TValue): AS_CLOSURE;
+begin
+  Result := PObjClosure(AS_OBJ(V));
+end;
+
+operator Explicit(V: TValue): AS_CLASS;
+begin
+  Result := PObjClass(AS_OBJ(V));
+end;
+
+operator Explicit(V: TValue): AS_INSTANCE;
+begin
+  Result := PObjInstance(AS_OBJ(V));
+end;
+
+operator Explicit(V: TValue): AS_BOUND_METHOD;
+begin
+  Result := PObjBoundMethod(AS_OBJ(V));
+end;
+
 function IS_FUNCTION(const V: TValue): Boolean; inline;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_FUNCTION);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_FUNCTION);
 end;
 
 function IS_CLOSURE(const V: TValue): Boolean;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_CLOSURE);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_CLOSURE);
 end;
 
 function IS_NATIVE_FN(const V: TValue): Boolean; inline;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_NATIVE_FN);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_NATIVE_FN);
 end;
 
 function IS_CLASS(const V: TValue): Boolean;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_CLASS);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_CLASS);
 end;
 
 function IS_INSTANCE(const V: TValue): Boolean;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_INSTANCE);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_INSTANCE);
 end;
 
 function IS_BOUND_METHOD(const V: TValue): Boolean;
 begin
-  Result := (V.type_ = VAL_OBJ) and (V.as_obj^.type_ = OBJ_BOUND_METHOD);
-end;
-
-function AS_FUNCTION(const V: TValue): PObjFunction; inline;
-begin
-  Result := PObjFunction(V.as_obj);
-end;
-
-function AS_CLOSURE(const V: TValue): PObjClosure;
-begin
-  Result := PObjClosure(V.as_obj);
-end;
-
-function AS_CLASS(const V: TValue): PObjClass;
-begin
-  Result := PObjClass(V.as_obj);
-end;
-
-function AS_INSTANCE(const V: TValue): PObjInstance;
-begin
-  Result := PObjInstance(V.as_obj);
-end;
-
-function AS_BOUND_METHOD(const V: TValue): PObjBoundMethod;
-begin
-  Result := PObjBoundMethod(V.as_obj);
+  Result := (V.IS_OBJ_VAL) and (AS_OBJ(V)^.type_ = OBJ_BOUND_METHOD);
 end;
 
 procedure printFunction(const V: PObjFunction; const err: Boolean);
@@ -295,7 +302,7 @@ begin
   if Result <> -1 then
     Exit;
   if (V.IS_OBJ_VAL) then
-    MM.temporary := V.as_obj;
+    MM.temporary := AS_OBJ(V);
   constants.write(V);
   Result := constants.count - 1;
   MM.temporary := nil;
